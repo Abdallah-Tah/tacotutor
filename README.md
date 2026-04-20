@@ -34,6 +34,7 @@ TacoTutor is a web-based AI tutor designed for children ages 4-8. It provides in
 - 📊 **Progress tracking** — per-child progress saved in JSON
 - 📱 **Mobile-first** — dark theme, responsive design, optimized for phones/tablets
 - 🔄 **Multi-provider** — swap LLM, STT, and TTS providers via config file
+- 🧩 **OpenClaw skill memory** — loads `skills/openclaw/SKILL.md` and keeps per-child memory snippets for personalized tutoring
 
 ---
 
@@ -165,7 +166,10 @@ tacotutor/
 │   ├── prompts.py             # System prompts per subject
 │   └── progress.py            # Per-child progress tracker
 ├── data/
-│   └── progress.json          # Auto-generated child progress
+│   ├── progress.json          # Auto-generated child progress
+│   └── openclaw_memory.json   # Auto-generated memory snippets for personalization
+├── skills/
+│   └── openclaw/SKILL.md      # OpenClaw tutoring behavior rules
 ├── requirements.txt
 ├── .env.example
 └── README.md
