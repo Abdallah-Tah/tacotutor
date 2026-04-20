@@ -12,7 +12,7 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "providers.yaml"
+CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "providers.yaml"
 
 
 def load_config():

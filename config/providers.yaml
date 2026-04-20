@@ -3,7 +3,7 @@
 # Each provider has its own settings block
 
 active:
-  llm: ollama        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
+  llm: gemini        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
   stt: local         # local (whisper) | deepgram
   tts: edge          # edge | gemini
 
