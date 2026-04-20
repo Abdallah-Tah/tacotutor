@@ -173,6 +173,14 @@ tacotutor/
 
 ---
 
+## Real-time Upgrade Guide
+
+For a concrete implementation roadmap (WebSocket events, streaming STT/LLM/TTS, barge-in, and rollout phases), see:
+
+- [`docs/realtime-roadmap.md`](docs/realtime-roadmap.md)
+
+---
+
 ## Current Status
 
 | Feature | Status |
