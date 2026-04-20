@@ -481,12 +481,13 @@ async function _send(text) {
             }),
         });
         const data = await resp.json();
-        if (data.reply) {
+        if (!resp.ok) {
+            addMessage('Oops, something went wrong. Try again!', 'tutor');
+        } else if (data.reply) {
             addMessage(data.reply, 'tutor', data.audio);
+        } else {
+            addMessage('Oops, no reply received. Try again!', 'tutor');
         }
-    } catch (e) {
-        addMessage('Oops, something went wrong. Try again!', 'tutor');
-    } finally {
         showTyping(false);
         state.sending = false;
     }
