@@ -291,6 +291,26 @@
         }
         .btn-send:hover { background: var(--primary-dark); }
         .btn-send:disabled { opacity: 0.4; cursor: default; }
+        .btn-live {
+            background: var(--bg-input);
+            color: var(--text);
+            border: 1px solid var(--border);
+            width: auto;
+            border-radius: 999px;
+            padding: 0 12px;
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .btn-live.active {
+            background: var(--accent);
+            color: #062322;
+            border-color: var(--accent);
+        }
+        .live-status {
+            font-size: 11px;
+            color: var(--text-muted);
+            padding: 0 16px 8px;
+        }
 
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,107,0.4); }
@@ -382,9 +402,11 @@
                    placeholder="Type your answer..."
                    autocomplete="off"
                    onkeydown="if(event.key==='Enter'&&!event.shiftKey)sendMessage()">
+            <button class="btn-icon btn-live" id="liveBtn" onclick="toggleLiveMode()">LIVE</button>
             <button class="btn-icon btn-mic" id="micBtn" onclick="toggleMic()">🎤</button>
             <button class="btn-icon btn-send" id="sendBtn" onclick="sendMessage()">➤</button>
         </div>
+        <div class="live-status" id="liveStatus">Live tutor mode: OFF</div>
     </div>
 </div>
 
@@ -401,6 +423,10 @@ let state = {
     sending: false,
     recording: false,
     recognition: null,
+    liveMode: false,
+    liveRecognition: null,
+    liveTranscript: '',
+    currentAudio: null,
 };
 
 const SUBJECT_META = {
@@ -449,6 +475,7 @@ function startSession() {
     console.log('Starting session for:', name, 'subject:', state.subject);
     
     switchView('chatView');
+    showLoading(false);
     
     // Get initial greeting
     _send('Hello! I\'m ready to learn today!');
@@ -490,6 +517,18 @@ async function _send(text) {
         }
         showTyping(false);
         state.sending = false;
+        if (state.liveMode && !data.audio) {
+            setLiveStatus('Listening for child...');
+            setTimeout(startLiveListening, 250);
+        }
+    } catch (e) {
+        addMessage('Connection issue. Please try again.', 'tutor');
+        showTyping(false);
+        state.sending = false;
+        if (state.liveMode) {
+            setLiveStatus('Listening for child...');
+            setTimeout(startLiveListening, 400);
+        }
     }
 }
 
@@ -537,13 +576,22 @@ function playAudio(url, player) {
     });
 
     const audio = new Audio(url);
+    state.currentAudio = audio;
     player.classList.add('playing');
     player.querySelector('.play-icon').textContent = '🔊';
+    setLiveStatus('Tutor is speaking...');
 
     audio.play().catch(() => {});
     audio.onended = () => {
         player.classList.remove('playing');
         player.querySelector('.play-icon').textContent = '▶️';
+        if (state.currentAudio === audio) state.currentAudio = null;
+        if (state.liveMode) {
+            setLiveStatus('Listening for child...');
+            setTimeout(startLiveListening, 200);
+        } else {
+            setLiveStatus('Live tutor mode: OFF');
+        }
     };
 }
 
@@ -574,6 +622,12 @@ function switchView(viewId) {
 
 function goBack() {
     if (state.recording) toggleMic();
+    if (state.liveRecognition) {
+        state.liveRecognition.stop();
+        state.liveRecognition = null;
+    }
+    state.liveMode = false;
+    updateLiveUi();
     switchView('welcomeView');
 }
 
@@ -613,6 +667,92 @@ function toggleMic() {
     btn.classList.add('recording');
     btn.textContent = '⏹';
     recognition.start();
+}
+
+function setLiveStatus(text) {
+    const el = document.getElementById('liveStatus');
+    if (el) el.textContent = text;
+}
+
+function updateLiveUi() {
+    const btn = document.getElementById('liveBtn');
+    btn.classList.toggle('active', state.liveMode);
+    btn.textContent = state.liveMode ? 'LIVE ON' : 'LIVE';
+    setLiveStatus(state.liveMode ? 'Listening for child...' : 'Live tutor mode: OFF');
+}
+
+function toggleLiveMode() {
+    state.liveMode = !state.liveMode;
+    if (state.recording) toggleMic();
+    if (!state.liveMode && state.liveRecognition) {
+        state.liveRecognition.onend = null;
+        state.liveRecognition.stop();
+        state.liveRecognition = null;
+    }
+    updateLiveUi();
+    if (state.liveMode) startLiveListening();
+}
+
+function startLiveListening() {
+    if (!state.liveMode || state.sending || state.liveRecognition) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        alert('Live mode needs Speech Recognition support.');
+        state.liveMode = false;
+        updateLiveUi();
+        return;
+    }
+
+    const meta = SUBJECT_META[state.subject];
+    const rec = new SpeechRecognition();
+    rec.lang = meta.lang;
+    rec.continuous = false;
+    rec.interimResults = true;
+    state.liveTranscript = '';
+
+    rec.onstart = () => {
+        // Barge-in behavior: stop tutor audio when child starts speaking.
+        if (state.currentAudio && !state.currentAudio.paused) {
+            state.currentAudio.pause();
+            state.currentAudio.currentTime = 0;
+            state.currentAudio = null;
+        }
+        setLiveStatus('Listening...');
+    };
+    rec.onresult = (e) => {
+        let finalText = '';
+        let interimText = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) finalText += t + ' ';
+            else interimText += t + ' ';
+        }
+        const combined = (finalText || interimText).trim();
+        if (combined) {
+            document.getElementById('msgInput').value = combined;
+        }
+        if (finalText.trim()) {
+            state.liveTranscript = finalText.trim();
+        }
+    };
+    rec.onerror = () => {
+        setLiveStatus('Mic issue. Retrying...');
+    };
+    rec.onend = async () => {
+        state.liveRecognition = null;
+        const text = state.liveTranscript.trim();
+        state.liveTranscript = '';
+        if (!state.liveMode) return;
+        if (text && !state.sending) {
+            document.getElementById('msgInput').value = '';
+            await _send(text);
+            return;
+        }
+        setTimeout(startLiveListening, 350);
+    };
+
+    state.liveRecognition = rec;
+    rec.start();
 }
 
 // Focus input on chat view

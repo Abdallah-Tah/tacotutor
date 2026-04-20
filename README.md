@@ -29,6 +29,7 @@ TacoTutor is a web-based AI tutor designed for children ages 4-8. It provides in
 ### Key features
 
 - 🎤 **Voice input** — kids can speak instead of typing (browser Speech Recognition API)
+- 🗣️ **Live Tutor mode** — hands-free back-and-forth loop (listen → answer → listen) for Zoom-like tutoring flow
 - 🔊 **Voice output** — every reply comes with TTS audio (auto-play)
 - 🧠 **AI-powered** — flexible LLM backend (Gemini, OpenAI, Ollama, etc.)
 - 📊 **Progress tracking** — per-child progress saved in JSON
