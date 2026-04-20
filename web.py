@@ -18,6 +18,7 @@ from tutor.tts.providers import get_tts
 from tutor.curriculum.lessons import get_curriculum
 from tutor.prompts import get_system_prompt
 from tutor.progress import ProgressTracker
+from tutor.openclaw import OpenClawMemory, compose_openclaw_prompt, load_openclaw_skill
 
 app = Flask(__name__)
 TTS_DIR = Path("/tmp/tacotutor_tts")
@@ -26,6 +27,13 @@ TTS_DIR.mkdir(exist_ok=True)
 # In-memory sessions per child
 sessions = {}
 progress = ProgressTracker()
+openclaw_memory = OpenClawMemory()
+openclaw_skill = load_openclaw_skill()
+
+
+def _compose_system_prompt(base_prompt: str, child: str, subject: str) -> str:
+    memory_block = openclaw_memory.get_context_block(child, subject)
+    return compose_openclaw_prompt(base_prompt, openclaw_skill, memory_block)
 
 
 def get_or_create_session(child: str, subject: str) -> dict:
@@ -41,7 +49,8 @@ def get_or_create_session(child: str, subject: str) -> dict:
         if lesson_idx >= len(lessons):
             lesson_idx = 0
         lesson = lessons[lesson_idx]
-        system_prompt = get_system_prompt(subject, level_data, lesson, grade=1)
+        base_system_prompt = get_system_prompt(subject, level_data, lesson, grade=1)
+        system_prompt = _compose_system_prompt(base_system_prompt, child, subject)
         sessions[key] = {
             "child": child,
             "subject": subject,
@@ -50,6 +59,7 @@ def get_or_create_session(child: str, subject: str) -> dict:
             "level_data": level_data,
             "lesson": lesson,
             "curriculum": curriculum,
+            "base_system_prompt": base_system_prompt,
             "history": [{"role": "system", "content": system_prompt}],
             "llm": get_llm(),
             "tts": get_tts(),
@@ -90,9 +100,13 @@ async def api_chat():
 
     session = get_or_create_session(child, subject)
     try:
+        session["history"][0]["content"] = _compose_system_prompt(
+            session["base_system_prompt"], child, subject
+        )
         session["history"].append({"role": "user", "content": message})
         reply = await session["llm"].chat(session["history"])
         session["history"].append({"role": "assistant", "content": reply})
+        openclaw_memory.remember_turn(child, subject, message, reply)
 
         # Generate TTS audio
         audio_id = str(uuid.uuid4())[:8]
