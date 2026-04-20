@@ -1,0 +1,95 @@
+# TacoTutor Provider Configuration
+# Set ACTIVE_PROVIDER to the provider you want to use
+# Each provider has its own settings block
+
+active:
+  llm: ollama        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
+  stt: local         # local (whisper) | deepgram
+  tts: edge          # edge | gemini
+
+# ─── LLM Providers ───────────────────────────────────────────
+
+llm:
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "qwen3.5:latest"
+    # No API key needed for local
+    temperature: 0.7
+    max_tokens: 512
+
+  openai:
+    api_key_env: "OPENAI_API_KEY"
+    model: "gpt-4o"
+    temperature: 0.7
+    max_tokens: 512
+
+  anthropic:
+    api_key_env: "ANTHROPIC_API_KEY"
+    model: "claude-sonnet-4-20250514"
+    temperature: 0.7
+    max_tokens: 512
+
+  gemini:
+    api_key_env: "GEMINI_API_KEY"
+    model: "gemini-2.5-flash"
+    temperature: 0.7
+    max_tokens: 512
+
+  minimax:
+    api_key_env: "MINIMAX_API_KEY"
+    model: "MiniMax-M2.7"
+    temperature: 0.7
+    max_tokens: 512
+
+  glm:
+    api_key_env: "GLM_API_KEY"
+    model: "glm-5"
+    temperature: 0.7
+    max_tokens: 512
+
+  openrouter:
+    api_key_env: "OPENROUTER_API_KEY"
+    model: "openai/gpt-4o"  # Can use any model on OpenRouter
+    base_url: "https://openrouter.ai/api/v1"
+    temperature: 0.7
+    max_tokens: 512
+
+# ─── STT Providers ───────────────────────────────────────────
+
+stt:
+  local:
+    # faster-whisper running locally
+    model_size: "base"   # tiny | base | small | medium | large
+    device: "cpu"        # cpu | cuda (for GPU)
+    language: "auto"     # auto-detect, or set "en", "ar"
+
+  deepgram:
+    api_key_env: "DEEPGRAM_API_KEY"
+    model: "nova-2"
+    language: "auto"
+
+# ─── TTS Providers ───────────────────────────────────────────
+
+tts:
+  edge:
+    voice_en: "en-US-DavisNeural"
+    voice_ar: "ar-SA-HamedNeural"
+    # No API key needed
+
+  gemini:
+    api_key_env: "GEMINI_API_KEY"
+    voice_en: "Puck"
+    voice_ar: "Puck"      # Will update once we test Arabic voices
+    model: "gemini-3.1-flash-tts-preview"
+
+# ─── Session Settings ────────────────────────────────────────
+
+session:
+  language: "auto"        # auto | en | ar
+  subjects:
+    - quran
+    - english
+    - math
+    - writing
+  max_session_minutes: 30
+  progress_file: "data/progress.json"
