@@ -78,7 +78,7 @@ def api_start():
 
 
 @app.route("/api/chat", methods=["POST"])
-def api_chat():
+async def api_chat():
     data = request.json or {}
     child = data.get("child", "student")
     subject = data.get("subject", "quran")
@@ -89,23 +89,22 @@ def api_chat():
         return jsonify({"error": "Empty message"}), 400
 
     session = get_or_create_session(child, subject)
-    loop = asyncio.new_event_loop()
     try:
         session["history"].append({"role": "user", "content": message})
-        reply = loop.run_until_complete(session["llm"].chat(session["history"]))
+        reply = await session["llm"].chat(session["history"])
         session["history"].append({"role": "assistant", "content": reply})
 
         # Generate TTS audio
         audio_id = str(uuid.uuid4())[:8]
         audio_path = str(TTS_DIR / f"{audio_id}.mp3")
-        loop.run_until_complete(session["tts"].speak(reply, language=language, output_path=audio_path))
+        await session["tts"].speak(reply, language=language, output_path=audio_path)
 
         return jsonify({
             "reply": reply,
             "audio": f"/api/audio/{audio_id}",
         })
-    finally:
-        loop.close()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/audio/<audio_id>")
