@@ -412,6 +412,7 @@ const SUBJECT_META = {
 // ─── Subject Selection ───
 document.querySelectorAll('.subject-card').forEach(card => {
     card.addEventListener('click', () => {
+        console.log('Subject card clicked:', card.dataset.subject);
         document.querySelectorAll('.subject-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         state.subject = card.dataset.subject;
@@ -419,39 +420,38 @@ document.querySelectorAll('.subject-card').forEach(card => {
 });
 
 // ─── Start Session ───
-async function startSession() {
+function startSession() {
+    console.log('startSession called');
     const name = document.getElementById('childName').value.trim();
+    console.log('Name entered:', name);
+    
+    const btn = document.getElementById('startBtn');
+    console.log('Button element:', btn);
+    console.log('Button onclick:', btn.getAttribute('onclick'));
+    
     if (!name) {
+        console.log('No name provided');
         document.getElementById('childName').focus();
         document.getElementById('childName').style.borderColor = 'var(--secondary)';
+        alert('Please enter your name!');
         return;
     }
+    
+    if (state.sending) {
+        console.log('Already sending, ignoring click');
+        return;
+    }
+    
     state.child = name;
     showLoading(true);
-
-    try {
-        const resp = await fetch('/api/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ child: state.child, subject: state.subject }),
-        });
-        const data = await resp.json();
-        state.level = data.level;
-
-        const meta = SUBJECT_META[state.subject];
-        document.getElementById('chatTitle').textContent = `${meta.icon} ${meta.name}`;
-        document.getElementById('chatSubtitle').textContent = `${state.child} — ${data.level_name}`;
-        document.getElementById('levelBadge').textContent = `LVL ${data.level}`;
-
-        switchView('chatView');
-
-        // Get initial greeting
-        await _send('Hello! I\'m ready to learn today!');
-    } catch (e) {
-        console.error(e);
-    } finally {
-        showLoading(false);
-    }
+    
+    const meta = SUBJECT_META[state.subject];
+    console.log('Starting session for:', name, 'subject:', state.subject);
+    
+    switchView('chatView');
+    
+    // Get initial greeting
+    _send('Hello! I\'m ready to learn today!');
 }
 
 // ─── Send Message ───
