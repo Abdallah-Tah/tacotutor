@@ -103,17 +103,67 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
     if not is_quran:
         subject_name = subject.capitalize()
         lesson_title = lesson_context["title"] if lesson_context else subject_name
+        lesson_desc = lesson_context.get("description", "") if lesson_context else ""
+        lesson_content = lesson_context.get("content", {}) if lesson_context else {}
+
+        # Build subject-specific opening
+        if subject == "math":
+            # Check for specific math content
+            if lesson_content.get("range"):
+                math_topic = f"counting {lesson_content['range']}"
+            elif lesson_content.get("operation"):
+                math_topic = lesson_content["operation"]
+            else:
+                math_topic = lesson_title
+
+            if include_greeting:
+                return (
+                    f"You are a warm, patient math tutor for a child named {child_name}. "
+                    f"Today's adventure: {lesson_title}. {lesson_desc} "
+                    f"Greet {child_name} warmly, then start with something CONCRETE and VISUAL — "
+                    f"ask {child_name} to imagine or count real objects related to {math_topic}. "
+                    "Guide discovery — ask, don't tell. One tiny step at a time. "
+                    "Keep it to 2-3 sentences. Make it feel like a game, not a test."
+                )
+            return (
+                f"You are tutoring {child_name} in math ({lesson_title}). "
+                "After feedback, give ONE clear next step. Start concrete (objects, fingers, pictures) before abstract (numbers). "
+                "If they struggle, break it smaller. If they excel, step forward. "
+                "Keep it to 1-2 sentences. Do not greet again."
+            )
+
+        elif subject == "english":
+            if lesson_content.get("letter"):
+                eng_topic = f"the letter {lesson_content['letter']}"
+            else:
+                eng_topic = lesson_title
+
+            if include_greeting:
+                return (
+                    f"You are a warm, patient English tutor for a child named {child_name}. "
+                    f"Today we're learning {eng_topic}. {lesson_desc} "
+                    f"Greet {child_name} warmly, then start by showing {eng_topic} in a fun way — "
+                    f"connect it to something familiar (animals, objects, colors). "
+                    "Guide discovery — let the child try before telling. One tiny step. "
+                    "Keep it to 2-3 sentences."
+                )
+            return (
+                f"You are tutoring {child_name} in English ({lesson_title}). "
+                "Give brief feedback + ONE clear next step. Build: letter → sound → word → sentence. "
+                "Keep it to 1-2 sentences. Do not greet again."
+            )
+
+        # Generic fallback
         if include_greeting:
             return (
-                f"You are a friendly tutor for a child named {child_name}. "
-                f"The lesson today is {lesson_title} ({subject_name}). "
-                f"Greet {child_name} warmly, then introduce today's topic and start the first step. "
-                "Be encouraging and keep it to 2-3 sentences. Use simple language for a child."
+                f"You are a warm, patient tutor for a child named {child_name}. "
+                f"Today's lesson: {lesson_title}. {lesson_desc} "
+                f"Greet {child_name} warmly and start with a simple, concrete question to begin. "
+                "Keep it to 2-3 sentences."
             )
         return (
-            f"You are tutoring {child_name} in {subject_name}. "
-                f"The current lesson is {lesson_title}. "
-                f"Guide {child_name} to the next step. Be encouraging, keep it to 1-2 sentences. Do not greet again."
+            f"You are tutoring {child_name} in {subject_name} ({lesson_title}). "
+            "Give brief feedback + ONE next step. Keep it to 1-2 sentences. Do not greet again."
         )
 
     # Quran prompts in Arabic with gender-aware language

@@ -146,9 +146,26 @@
             "Recent tutor guidance: \u062d\u0633\u0646\u062a \u0643\u062b\u064a\u0631\u0627\u060c \u0647\u0646\u0627\u062f. \u0627\u0644\u0622\u0646 \u062d\u0627\u0648\u0644 \u062a\u0642\u0648\u0644 \u0627\u0644\u0646\u062f\u0627\u0621 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649.",
             "Recent child response: \u0627\u0644\u062d\u0645\u062f \u0644\u0644\u0647 \u0631\u0628 \u0627\u0644\u0639\u0627\u0644\u0645\u064a\u0646"
           ]
+        },
+        "math": {
+          "notes": [
+            "Recent child response: One, two, three.",
+            "Recent tutor guidance: \u062d\u0633\u0646\u062a\u060c \u0647\u0627\u0646\u062f! \u0645\u062a\u0627\u0628\u0639\u0629 \u0628\u0627\u0644\u0639\u062f\u062f \u062b\u0644\u0627\u062b\u0629 \u0648\u0631\u0642\u0645\u064a \u0623\u0631\u0628\u0639\u0629."
+          ]
+        },
+        "english": {
+          "notes": [
+            "Recent child response: Hey",
+            "Recent tutor guidance: \u0647\u0627\u0646\u062f\u060c \u062c\u0631\u0628 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649 \u0645\u0639 \u0627\u0644\u062d\u0631\u0641 \u0623.",
+            "Recent child response: Uh...",
+            "Recent child response: Ei!",
+            "Recent tutor guidance: \u0647\u0627\u0646\u062f\u060c \u062d\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649 \u0645\u0639 \u0627\u0644\u062d\u0631\u0641 \u0623.",
+            "Recent child response: A.",
+            "Recent tutor guidance: \u062d\u0633\u0646\u0627\u064b\u060c \u0647\u0627\u0646\u062f\u060c \u062c\u0631\u0628 \u0645\u0631\u0629 \u0623\u062e\u0631\u0649 \u0645\u0639 \u0627\u0644\u062d\u0631\u0641 \u0623."
+          ]
         }
       },
-      "updated": "2026-04-23T17:47:05.084779"
+      "updated": "2026-04-23T19:03:33.621985"
     },
     "Hanad": {
       "subjects": {
