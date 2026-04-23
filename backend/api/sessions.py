@@ -124,25 +124,25 @@ def parent_dashboard(db: Session = Depends(get_db), parent: User = Depends(get_c
 def kid_dashboard(
     child_id: str,
     db: Session = Depends(get_db),
-    parent: User = Depends(get_current_parent)
 ):
     from backend.schemas import KidDashboard
     from backend.models import Reward, LessonAssignment, ProgressRecord
 
-    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
+    cid = _uuid_or_404(child_id)
+    child = db.query(Child).filter(Child.id == cid).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
 
     current_lesson = (
         db.query(LessonAssignment)
-        .filter(LessonAssignment.child_id == child_id)
+        .filter(LessonAssignment.child_id == cid)
         .filter(LessonAssignment.status.in_(["pending", "in_progress"]))
         .order_by(LessonAssignment.assigned_at.desc())
         .first()
     )
 
-    rewards = db.query(Reward).filter(Reward.child_id == child_id).order_by(Reward.earned_at.desc()).limit(10).all()
-    progress = db.query(ProgressRecord).filter(ProgressRecord.child_id == child_id).all()
+    rewards = db.query(Reward).filter(Reward.child_id == cid).order_by(Reward.earned_at.desc()).limit(10).all()
+    progress = db.query(ProgressRecord).filter(ProgressRecord.child_id == cid).all()
 
     streak = 0
     for p in progress:
