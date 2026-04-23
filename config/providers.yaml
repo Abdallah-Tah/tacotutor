@@ -4,8 +4,8 @@
 
 active:
   llm: gemini        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
-  stt: local         # local (whisper) | deepgram
-  tts: edge          # edge | gemini
+  stt: gemini        # local (whisper) | deepgram | gemini
+  tts: gemini        # edge | gemini
 
 # ─── LLM Providers ───────────────────────────────────────────
 
@@ -66,6 +66,11 @@ stt:
   deepgram:
     api_key_env: "DEEPGRAM_API_KEY"
     model: "nova-2"
+    language: "auto"
+
+  gemini:
+    api_key_env: "GEMINI_API_KEY"
+    model: "gemini-2.5-flash"
     language: "auto"
 
 # ─── TTS Providers ───────────────────────────────────────────

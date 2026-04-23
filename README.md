@@ -1,149 +1,119 @@
-# TacoTutor 🌮📚
+# TacoTutor v2.0
 
-**AI-powered voice tutor for kids** — Quran, English, and Math lessons with real-time voice interaction.
+**AI-powered Quran Tutoring Platform for Kids**
 
-Built by [Abdallah Mohamed](https://github.com/Abdallah-Tah) with help from [Taco](https://github.com/openclaw/openclaw) (OpenClaw AI agent).
-
----
-
-## What is TacoTutor?
-
-TacoTutor is a web-based AI tutor designed for children ages 4-8. It provides interactive lessons in:
-
-| Subject | Content |
-|---------|---------|
-| 🕌 **Quran & Arabic** | Arabic letters (Alif, Ba, Ta...), short surahs (Al-Fatiha, Al-Ikhlas, Al-Falaq, An-Nas), tajweed basics |
-| 📖 **English** | Phonics (A-Z letter sounds), sight words (Grade 1), simple sentence reading & writing |
-| 🔢 **Math** | Counting (1-20), addition (within 10), subtraction (within 10), word problems |
-| ✏️ **Writing** | Letter tracing, word building, sentence construction |
-
-### How it works
-
-1. **Child opens the app** on a phone, tablet, or computer
-2. **Enters their name** and **picks a subject**
-3. **TacoTutor greets them** by voice and starts the lesson
-4. **Child responds** by typing or speaking (voice input)
-5. **TacoTutor replies** with encouragement, corrections, and next steps — **with audio**
-6. **Progress is saved** automatically per child — resumes where they left off
-
-### Key features
-
-- 🎤 **Voice input** — kids can speak instead of typing (browser Speech Recognition API)
-- 🗣️ **Live Tutor mode** — hands-free back-and-forth loop (listen → answer → listen) for Zoom-like tutoring flow
-- 🔊 **Voice output** — every reply comes with TTS audio (auto-play)
-- 🧠 **AI-powered** — flexible LLM backend (Gemini, OpenAI, Ollama, etc.)
-- 📊 **Progress tracking** — per-child progress saved in JSON
-- 📱 **Mobile-first** — dark theme, responsive design, optimized for phones/tablets
-- 🔄 **Multi-provider** — swap LLM, STT, and TTS providers via config file
-- 🧩 **OpenClaw skill memory** — loads `skills/openclaw/SKILL.md` and keeps per-child memory snippets for personalized tutoring
+A production-ready platform with real-time voice tutoring, parent dashboards, lesson management,
+and custom instruction files via Markdown.
 
 ---
 
 ## Architecture
 
 ```
-Phone/Tablet Browser
-    ↕ (HTTP/WebSocket)
-Flask Web Server (Pi/MacBook)
-    ↕
-┌─────────────────────────────────┐
-│  LLM (Gemini/OpenAI/Ollama...)  │
-│  TTS (Edge-TTS / Gemini TTS)    │
-│  STT (faster-whisper / Deepgram)│
-│  Curriculum (Quran/English/Math)│
-│  Progress Tracker (JSON)        │
-└─────────────────────────────────┘
+Browser (React + Vite + Tailwind)
+    |
+    v
+FastAPI Backend (8088)
+    |
+    +-- Auth (JWT + Google OAuth)
+    +-- Users (parent/child profiles)
+    +-- Lessons (CRUD + assignments)
+    +-- Sessions (progress tracking)
+    +-- Instructions (Markdown files)
+    +-- Real-time WebSocket (/api/realtime)
+    |
+    v
+PostgreSQL Database
+    |
+    v
+Legacy Flask Server (8088 - backward compat)
 ```
-
-**Provider flexibility** — swap any provider by editing `config/providers.yaml`:
-
-| Component | Providers |
-|-----------|-----------|
-| **LLM** | Ollama (local), OpenAI, Anthropic, Gemini, MiniMax, GLM, OpenRouter |
-| **TTS** | Edge-TTS (free, no API key), Gemini TTS |
-| **STT** | faster-whisper (local, free), Deepgram |
 
 ---
 
-## Setup Guide
+## What's New in v2.0
 
-### Prerequisites
+### Platform Foundation
+- **React frontend** with Vite, Tailwind CSS, Framer Motion
+- **FastAPI backend** with PostgreSQL, SQLAlchemy
+- **Auth system** with JWT tokens and Google OAuth
+- **Parent dashboard** with child management, progress overview
+- **Kid dashboard** with streaks, rewards, lesson cards
+- **Lesson management** with assignment system
+- **Instruction files** via Markdown with parser
 
-- Python 3.10+
-- At least one LLM API key (or Ollama for local)
-- Works on Raspberry Pi, MacBook, or any Linux/macOS machine
+### Database Schema
+- Users (parents + admin)
+- Children (profiles per parent)
+- Student profiles (learning settings)
+- Lessons (Quran, English, Math)
+- Lesson assignments
+- Session history
+- Recitation attempts
+- Progress records
+- Mistake logs
+- Rewards/streaks
+- Instruction files
 
-### Installation
+### Quran Features
+- Embedded Quran text for offline use
+- Word highlighting system
+- Ayah navigator
+- Progress tracking per ayah
+- Visual feedback (correct/incorrect words)
+
+### Real-Time Foundation
+- WebSocket endpoint for live tutoring
+- Teaching loop: LISTEN -> TRANSCRIBE -> MATCH -> DECIDE -> RESPOND -> REPEAT
+- Quran matcher with Arabic text normalization
+- Session manager for state persistence
+- Barge-in support (child interrupts tutor)
+
+---
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/Abdallah-Tah/tacotutor.git
-cd tacotutor
-
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install dependencies
+# Backend
 pip install -r requirements.txt
 
-# 4. Configure your API keys
+# Frontend
+cd app && npm install
+```
+
+### 2. Set Up Environment
+
+```bash
 cp .env.example .env
-# Edit .env and add at least one LLM API key
+# Edit .env and add:
+# DATABASE_URL=postgresql://user:pass@localhost:5432/tacotutor
+# SECRET_KEY=your-secret-key
+# GOOGLE_CLIENT_ID=...
+# GOOGLE_CLIENT_SECRET=...
 ```
 
-### Configuration
-
-Edit `config/providers.yaml` to set your active providers:
-
-```yaml
-active:
-  llm: gemini        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
-  stt: local         # local (free) | deepgram
-  tts: edge          # edge (free) | gemini
-```
-
-Set API keys in `.env`:
+### 3. Run the Platform
 
 ```bash
-# Only set keys for providers you use
-GEMINI_API_KEY=AIza...          # For Gemini LLM + TTS
-OPENAI_API_KEY=sk-...           # For OpenAI LLM
-ANTHROPIC_API_KEY=sk-ant-...    # For Claude
-OLLAMA_BASE_URL=http://localhost:11434  # For local Ollama (no key needed)
+# Development (auto-reload)
+python main.py
+
+# Or directly with uvicorn
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8088
+
+# Build frontend manually if you are not using `python main.py`
+cd app && npm run build
 ```
 
-### Running
+`python main.py` now checks whether `app/dist` is missing or older than the frontend source files and runs `npm run build` automatically when needed.
 
-```bash
-# Web mode (phone/tablet access)
-python web.py
+### 4. Access the App
 
-# Text mode (terminal, for testing)
-python bot.py --subject quran --child Ali --text
-
-# Voice mode (Pipecat, coming soon)
-python voice.py --subject quran --child Ali
 ```
-
-The web server will show:
-```
-🌮 TacoTutor running at: http://192.168.x.x:8088
-   Open this URL on your phone!
-```
-
-Open that URL on any device on the same network.
-
-### Firewall
-
-If you can't access the app from another device, open the port:
-
-```bash
-# Linux/Raspberry Pi
-sudo ufw allow 8088/tcp
-
-# Or with iptables
-sudo iptables -A INPUT -p tcp --dport 8088 -j ACCEPT
+http://localhost:8088          # React app (served by FastAPI)
+http://localhost:8088/api/docs  # API documentation (Swagger)
 ```
 
 ---
@@ -152,78 +122,203 @@ sudo iptables -A INPUT -p tcp --dport 8088 -j ACCEPT
 
 ```
 tacotutor/
-├── web.py                     # Flask web server (main entry point)
-├── bot.py                     # Agent core (text chat mode)
-├── voice.py                   # Pipecat voice pipeline (coming soon)
+├── app/                          # React + Vite frontend
+│   ├── src/
+│   │   ├── components/           # UI components
+│   │   ├── pages/                # Route pages
+│   │   │   ├── Welcome.tsx
+│   │   │   ├── auth/             # Login, Signup
+│   │   │   ├── parent/           # ParentDashboard, ChildProfile
+│   │   │   ├── kid/              # KidDashboard
+│   │   │   ├── lesson/           # LessonManagement, LessonPlayer
+│   │   │   └── live/             # LiveTutorSession
+│   │   ├── hooks/                # Custom React hooks
+│   │   ├── stores/               # Zustand state stores
+│   │   ├── services/             # API clients
+│   │   └── types/                # TypeScript types
+│   └── package.json
+│
+├── backend/                      # FastAPI backend
+│   ├── main.py                   # Entry point
+│   ├── core/                     # Config, database, security
+│   ├── api/                      # REST + WebSocket routes
+│   │   ├── auth.py
+│   │   ├── users.py
+│   │   ├── lessons.py
+│   │   ├── sessions.py
+│   │   ├── instructions.py
+│   │   └── realtime.py
+│   ├── models/                   # SQLAlchemy models
+│   ├── schemas/                  # Pydantic schemas
+│   └── services/                 # Business logic
+│       ├── tutor_engine.py
+│       ├── quran_matcher.py
+│       ├── instruction_loader.py
+│       └── session_manager.py
+│
+├── instructions/                 # Markdown instruction files
+│   ├── default_quran.md
+│   ├── beginner_reading.md
+│   └── memorization_mode.md
+│
+├── tutor/                        # Legacy modules (kept for compatibility)
+│   ├── llm/
+│   ├── stt/
+│   ├── tts/
+│   ├── curriculum/
+│   ├── prompts.py
+│   ├── progress.py
+│   └── openclaw.py
+│
+├── web.py                        # Legacy Flask server
+├── live.py                       # Gemini Live WebSocket server
 ├── config/
-│   └── providers.yaml         # Provider configuration (LLM, STT, TTS)
-├── templates/
-│   └── index.html             # Mobile-first web UI
-├── tutor/
-│   ├── llm/providers.py       # 7 LLM providers (Ollama, OpenAI, Anthropic, Gemini, MiniMax, GLM, OpenRouter)
-│   ├── stt/providers.py       # 2 STT providers (faster-whisper, Deepgram)
-│   ├── tts/providers.py       # 2 TTS providers (Edge-TTS, Gemini TTS)
-│   ├── curriculum/lessons.py  # Lesson content (Quran, English, Math)
-│   ├── prompts.py             # System prompts per subject
-│   └── progress.py            # Per-child progress tracker
-├── data/
-│   ├── progress.json          # Auto-generated child progress
-│   └── openclaw_memory.json   # Auto-generated memory snippets for personalization
-├── skills/
-│   └── openclaw/SKILL.md      # OpenClaw tutoring behavior rules
-├── requirements.txt
-├── .env.example
-└── README.md
+│   └── providers.yaml            # Provider configuration
+├── data/                         # SQLite / JSON data (legacy)
+└── requirements.txt
 ```
 
 ---
 
-## Real-time Upgrade Guide
+## API Endpoints
 
-For a concrete implementation roadmap (WebSocket events, streaming STT/LLM/TTS, barge-in, and rollout phases), see:
-
-- [`docs/realtime-roadmap.md`](docs/realtime-roadmap.md)
-
----
-
-## Current Status
-
-| Feature | Status |
-|---------|--------|
-| Web interface | ✅ Working |
-| Multi-provider LLM | ✅ Working (7 providers) |
-| TTS audio output | ✅ Working (Edge-TTS, Gemini TTS) |
-| Voice input (browser) | ✅ Working (Speech Recognition API) |
-| Progress tracking | ✅ Working |
-| Quran curriculum | ✅ Working (letters + surahs) |
-| English curriculum | ✅ Working (phonics + sight words) |
-| Math curriculum | ✅ Working (counting + add/sub) |
-| Real-time voice pipeline | 🔲 Coming soon (Pipecat) |
-| Browser WebRTC client | 🔲 Planned |
-| Worksheet generation | 🔲 Planned |
-| Parent dashboard | 🔲 Planned |
-| Kid profiles | 🔲 Planned |
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/auth/signup` | Create parent account |
+| `POST /api/auth/login` | Login with email/password |
+| `POST /api/auth/google` | Google OAuth login |
+| `GET /api/auth/me` | Get current user |
+| `POST /api/users/children` | Add child |
+| `GET /api/users/children` | List children |
+| `GET /api/lessons` | List lessons |
+| `POST /api/lessons/assign` | Assign lesson to child |
+| `POST /api/sessions/start` | Start tutoring session |
+| `POST /api/sessions/{id}/end` | End session |
+| `GET /api/sessions/dashboard/parent` | Parent dashboard data |
+| `GET /api/sessions/dashboard/kid/{child_id}` | Kid dashboard data |
+| `POST /api/instructions` | Create instruction file |
+| `GET /api/instructions` | List instruction files |
+| `WS /api/realtime` | Live tutoring WebSocket |
 
 ---
 
-## Known Issues
+## Real-Time Tutoring Pipeline
 
-- **iOS Safari**: Button clicks may not register due to Safari JavaScript limitations. Use Chrome on iOS or test from a computer browser.
-- **Chinese translation**: Some phones auto-translate the page. Fixed with `notranslate` meta tags.
-- **Arabic TTS**: Edge-TTS Arabic voice reads Arabic text correctly but may not handle English/Arabic mixed content well.
-- **Rate limits**: Gemini free tier has 10 req/min limit for TTS.
+```
+LISTEN      -> capture child audio via WebSocket
+TRANSCRIBE  -> streaming STT (partial + final transcripts)
+MATCH       -> QuranMatcher compares with expected ayah
+DECIDE      -> accuracy score -> encourage / gentle correction / stop & fix
+RESPOND     -> LLM generates feedback + TTS streams audio
+REPEAT      -> continue without resetting session
+```
+
+### WebSocket Events
+
+**Client -> Server:**
+- `session_start`
+- `audio_frame` (base64 PCM)
+- `user_text` (fallback)
+- `barge_in` (child interrupted)
+- `session_end`
+
+**Server -> Client:**
+- `partial_transcript`
+- `final_transcript`
+- `matching_result`
+- `assistant_sentence`
+- `audio_chunk` (base64 PCM)
+- `word_highlight`
+- `session_state`
+- `turn_complete`
+
+---
+
+## Instruction File Format
+
+```markdown
+# Instruction: [Name]
+
+## Metadata
+level: beginner | intermediate | advanced
+mode: reading | memorization | tajweed
+pace: slow | medium | fast
+subject: quran
+
+## Target
+- Surah: [name]
+- Ayah: [range]
+
+## Goals
+- [goal 1]
+- [goal 2]
+
+## Teaching Rules
+- [rule 1]
+- [rule 2]
+
+## Correction Rules
+- [rule 1]
+- [rule 2]
+
+## Visual Guidance Rules
+- [rule 1]
+
+## Tutor Behavior
+- [behavior 1]
+
+## Parent Notes
+- [note 1]
+```
 
 ---
 
 ## Tech Stack
 
-- **Backend**: Python 3.10+, Flask
-- **Frontend**: HTML5, CSS3, Vanilla JavaScript
-- **LLM**: Gemini API (default), supports 7 providers
-- **TTS**: Edge-TTS (default), Gemini TTS
-- **STT**: faster-whisper (local), Deepgram
-- **Voice pipeline**: Pipecat (planned)
-- **Fonts**: Nunito (Google Fonts)
+**Frontend:**
+- React 18 + Vite
+- Tailwind CSS
+- Framer Motion
+- Zustand (state management)
+- React Router
+- Axios
+- Lucide React (icons)
+
+**Backend:**
+- FastAPI
+- SQLAlchemy + PostgreSQL
+- Pydantic
+- JWT (python-jose)
+- bcrypt (passlib)
+- python-multipart
+
+**AI Providers:**
+- LLM: Gemini, OpenAI, Anthropic, Ollama
+- STT: faster-whisper, Deepgram, Gemini
+- TTS: Edge-TTS, Gemini TTS
+
+---
+
+## Roadmap
+
+### v2.0 (Current)
+- Platform foundation (auth, dashboards, lessons)
+- Database-backed architecture
+- Markdown instruction files
+- Quran word highlighting
+- Real-time WebSocket foundation
+
+### v2.1 (Next)
+- Full streaming STT/LLM/TTS pipeline
+- Barge-in with audio cancellation
+- Visual word tracking in real-time
+- Session persistence across page reloads
+
+### v2.2 (Future)
+- WebRTC for lower latency
+- Pipecat integration
+- Multi-child sessions
+- Parent reports and analytics
 
 ---
 
@@ -236,7 +331,4 @@ MIT
 ## Credits
 
 - Built by [Abdallah Mohamed](https://github.com/Abdallah-Tah)
-- AI assistance by [Taco](https://github.com/openclaw/openclaw) (OpenClaw agent)
-- Voice pipeline: [Pipecat](https://github.com/pipecat-ai/pipecat)
-- TTS: [edge-tts](https://github.com/rany2/edge-tts), Google Gemini TTS
-- STT: [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+- AI assistance by Taco (OpenClaw agent)

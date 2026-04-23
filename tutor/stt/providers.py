@@ -3,7 +3,9 @@ TacoTutor STT Provider — unified interface for speech-to-text backends.
 """
 
 import os
+import base64
 import logging
+import mimetypes
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -71,17 +73,63 @@ class DeepgramProvider(STTProvider):
         with open(audio_path, "rb") as f:
             audio_data = f.read()
 
-        resp = await httpx.AsyncClient().post(
-            url, params=params, content=audio_data,
-            headers={"Authorization": f"Token {self.api_key}", "Content-Type": "audio/wav"},
-        )
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                url, params=params, content=audio_data,
+                headers={"Authorization": f"Token {self.api_key}", "Content-Type": "audio/wav"},
+            )
         resp.raise_for_status()
         return resp.json()["results"]["channels"][0]["alternatives"][0]["transcript"]
+
+
+class GeminiSTTProvider(STTProvider):
+    """Gemini multimodal STT using uploaded audio bytes."""
+
+    def __init__(self, cfg: dict):
+        self.api_key = os.environ.get(cfg["api_key_env"], "")
+        if not self.api_key:
+            raise ValueError(f"Missing env var: {cfg['api_key_env']}")
+        self.model = cfg.get("model", "gemini-2.5-flash")
+
+    async def transcribe(self, audio_path: str, language: str = "auto") -> str:
+        import httpx
+
+        mime_type = mimetypes.guess_type(audio_path)[0] or "audio/wav"
+        with open(audio_path, "rb") as f:
+            audio_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        prompt = "Transcribe this child speech audio. Return only the exact transcript text, with no explanation. If the audio has no clear speech, return an empty string."
+        if language != "auto":
+            prompt += f" The language is likely {language}."
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": prompt},
+                    {"inlineData": {"mimeType": mime_type, "data": audio_b64}},
+                ],
+            }],
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": 256,
+            },
+        }
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        text = "".join(part.get("text", "") for part in parts).strip()
+        return text
 
 
 STT_PROVIDERS = {
     "local": LocalWhisperProvider,
     "deepgram": DeepgramProvider,
+    "gemini": GeminiSTTProvider,
 }
 
 

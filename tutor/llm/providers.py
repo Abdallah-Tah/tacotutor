@@ -36,26 +36,26 @@ class LLMProvider(ABC):
 
 class OllamaProvider(LLMProvider):
     def __init__(self, cfg: dict):
-        import httpx
         self.base_url = cfg.get("base_url", "http://localhost:11434")
         self.model = cfg["model"]
         self.temperature = cfg.get("temperature", 0.7)
         self.max_tokens = cfg.get("max_tokens", 512)
-        self.client = httpx.AsyncClient(timeout=120)
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
-        resp = await self.client.post(
-            f"{self.base_url}/api/chat",
-            json={
-                "model": self.model,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": kwargs.get("temperature", self.temperature),
-                    "num_predict": kwargs.get("max_tokens", self.max_tokens),
+        import httpx
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": kwargs.get("temperature", self.temperature),
+                        "num_predict": kwargs.get("max_tokens", self.max_tokens),
+                    },
                 },
-            },
-        )
+            )
         resp.raise_for_status()
         return resp.json()["message"]["content"]
 
@@ -114,14 +114,13 @@ class AnthropicProvider(LLMProvider):
 
 class GeminiProvider(LLMProvider):
     def __init__(self, cfg: dict):
-        import httpx
         self.api_key = _get_key(cfg["api_key_env"])
         self.model = cfg["model"]
         self.temperature = cfg.get("temperature", 0.7)
         self.max_tokens = cfg.get("max_tokens", 512)
-        self.client = httpx.AsyncClient(timeout=120)
 
     async def chat(self, messages: list[dict], **kwargs) -> str:
+        import httpx
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
         # Convert to Gemini format
         contents = []
@@ -129,13 +128,14 @@ class GeminiProvider(LLMProvider):
             role = "user" if m["role"] in ("user", "system") else "model"
             contents.append({"role": role, "parts": [{"text": m["content"]}]})
 
-        resp = await self.client.post(url, json={
-            "contents": contents,
-            "generationConfig": {
-                "temperature": kwargs.get("temperature", self.temperature),
-                "maxOutputTokens": kwargs.get("max_tokens", self.max_tokens),
-            },
-        })
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, json={
+                "contents": contents,
+                "generationConfig": {
+                    "temperature": kwargs.get("temperature", self.temperature),
+                    "maxOutputTokens": kwargs.get("max_tokens", self.max_tokens),
+                },
+            })
         resp.raise_for_status()
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
