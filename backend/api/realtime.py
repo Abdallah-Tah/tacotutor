@@ -76,44 +76,61 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
         surah_name = lesson_context["content"].get("surah") or lesson_context["title"]
         ayah_text = ayahs[ayah_index]
         ayah_number = ayah_index + 1
+        total_ayahs = len(ayahs)
+
+        # Build context about position in surah
+        position_info = f"هذه الآية رقم {ayah_number} من {total_ayahs} آيات في سورة {surah_name}."
+
         if include_greeting:
             return (
-                f"The child's name is {child_name}. The selected lesson is {lesson_context['title']}. "
-                f"Greet {child_name} warmly in one short, kid-friendly sentence, then ask {child_name} to read only ayah {ayah_number} from Surah {surah_name}. "
-                f"Quote this exact ayah verbatim and do not shorten it: {ayah_text}. "
-                "Reply in simple Arabic only. Do not use English. Do not break it into smaller chunks. Keep it encouraging, simple, and concise."
+                f"أنت معلم قرآن لطفلة اسمها {child_name}. الدرس اليوم هو سورة {surah_name}. "
+                f"{position_info} "
+                f"سلّم على {child_name} بحرارة، ثم اشرح لها أنكم ستتعلمون سورة {surah_name} معاً. "
+                f"ثم اطلب منها أن تقرأ الآية {ayah_number} وهي: {ayah_text}. "
+                "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
+                "كن مشجعاً ولطيفاً. اذكر الآية كاملة بدون اختصار. "
+                "اكتب 2-3 جمل مفيدة تتضمن التحيّة والآية المطلوبة وتشجيع بسيط."
             )
         return (
-            f"The child's name is {child_name}. The selected lesson is {lesson_context['title']}. "
-            f"Now continue with ayah {ayah_number} from Surah {surah_name}. "
-            f"In one short, kid-friendly sentence, guide {child_name} to read this exact ayah only, quoted verbatim with no shortening: {ayah_text}. "
-            "Reply in simple Arabic only. Do not use English. Do not greet again. Do not break it into smaller chunks. Keep it encouraging, simple, and concise."
+            f"أنت معلم قرآن لطفلة اسمها {child_name}. "
+            f"{position_info} "
+            f"الآية المطلوبة الآن هي: {ayah_text}. "
+            f"اشرح لـ {child_name} بلطف أن هذه الآية التالية، واطلب منها أن تقرأها بتمهل. "
+            "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
+            "لا تسلّم مرة أخرى. كن مشجعاً. اذكر الآية كاملة بدون اختصار. "
+            "اكتب 2-3 جمل تتضمن شرح بسيط والآية وتشجيع."
         )
 
     if lesson_context and lesson_context["content"].get("letter"):
         letter_name = lesson_context["content"].get("name") or lesson_context["title"]
         letter = lesson_context["content"].get("letter")
+        words = lesson_context["content"].get("words", [])
+        words_hint = f" من الكلمات التي تحتوي هذا الحرف: {', '.join(words[:3])}." if words else ""
+
         if include_greeting:
             return (
-                f"The child's name is {child_name}. The selected lesson is {lesson_context['title']}. "
-                f"Greet {child_name} warmly in one short, kid-friendly sentence, then introduce the Arabic letter {letter_name} ({letter}) and ask for one repeat only. "
-                "Reply in simple Arabic only. Do not use English. Keep it encouraging, simple, and concise."
+                f"أنت معلم لطفلة اسمها {child_name}. الدرس اليوم هو تعلّم الحرف {letter_name} ({letter}). "
+                f"{words_hint} "
+                f"سلّم على {child_name} بحرارة، ثم عرّفها على الحرف {letter_name} واطلب منها أن تكرره مرة واحدة. "
+                "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً. اكتب 2-3 جمل."
             )
         return (
-            f"The child's name is {child_name}. Continue the selected lesson {lesson_context['title']}. "
-            f"In one short, kid-friendly sentence, ask {child_name} to repeat the Arabic letter {letter_name} ({letter}) one time. "
-            "Reply in simple Arabic only. Do not use English. Do not greet again. Keep it encouraging, simple, and concise."
+            f"أنت معلم لطفلة اسمها {child_name}. "
+            f"اطلب منها أن تكرر الحرف {letter_name} ({letter}) مرة واحدة. "
+            "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
+            "لا تسلّم مرة أخرى. كن مشجعاً. اكتب 1-2 جمل."
         )
 
     if include_greeting:
         return (
-            f"The child's name is {child_name}. Greet {child_name} warmly in one short, kid-friendly sentence, "
-            "then immediately invite them to begin the first reading step of today's lesson. "
-            "Keep it encouraging, simple, and concise."
+            f"أنت معلم لطفلة اسمها {child_name}. "
+            f"سلّم على {child_name} بحرارة وادعُها لبدء الدرس الأول اليوم. "
+            "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً."
         )
     return (
-        f"The child's name is {child_name}. In one short, kid-friendly sentence, guide {child_name} to continue the current lesson. "
-        "Do not greet again. Keep it encouraging, simple, and concise."
+        f"أنت معلم لطفلة اسمها {child_name}. "
+        f"وجّه {child_name} للمتابعة في الدرس الحالي. "
+        "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. لا تسلّم مرة أخرى."
     )
 
 
@@ -244,16 +261,16 @@ async def realtime_ws(websocket: WebSocket):
                 if ayahs:
                     target_ayah = ayahs[max(0, min(current_ayah_index, len(ayahs) - 1))]
                     user_text = (
-                        f"Current target ayah: {target_ayah}. "
-                        f"The child said: {raw_user_text}. "
-                        "In one short, kid-friendly sentence, briefly assess the attempt and give the next tiny step for this same ayah. "
-                        "Reply in simple Arabic only. Do not use English."
+                        f"الآية المطلوبة: {target_ayah}. "
+                        f"الطفلة قالت: {raw_user_text}. "
+                        "قيّم محاولتها باختصار وشجّعها، ثم أعطها الخطوة التالية لنفس الآية. "
+                        "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً."
                     )
                 elif active_subject == "quran":
                     user_text = (
-                        f"The child said: {raw_user_text}. "
-                        "In one short, kid-friendly sentence, briefly assess the attempt and give the next tiny step. "
-                        "Reply in simple Arabic only. Do not use English."
+                        f"الطفلة قالت: {raw_user_text}. "
+                        "قيّم محاولتها باختصار وشجّعها. "
+                        "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً."
                     )
                 reply = await generate_reply(user_text, remember_user_text=raw_user_text)
                 await websocket.send_json({"type": "assistant_sentence", "text": reply, "ayahIndex": current_ayah_index})

@@ -119,18 +119,28 @@ export default function LiveTutorSession() {
     const forceArabicVoice = lesson?.subject === 'quran'
     const isArabic = forceArabicVoice || /[\u0600-\u06FF]/.test(text)
     const voices = synth.getVoices()
-    const matchingVoice = forceArabicVoice
-      ? voices.find((voice) => voice.lang.toLowerCase().startsWith('ar-sa'))
-        || voices.find((voice) => voice.lang.toLowerCase().startsWith('ar'))
-      : voices.find((voice) => voice.lang.toLowerCase().startsWith(isArabic ? 'ar' : 'en'))
 
-    if (matchingVoice) {
-      utterance.voice = matchingVoice
+    if (forceArabicVoice || isArabic) {
+      // Try Arabic voices in priority order: Saudi, Gulf, Standard, any Arabic
+      const arVoice = voices.find((v) => v.lang === 'ar-SA')
+        || voices.find((v) => v.lang.startsWith('ar-SA'))
+        || voices.find((v) => v.lang.startsWith('ar-AE') || v.lang.startsWith('ar-KW') || v.lang.startsWith('ar-QA') || v.lang.startsWith('ar-BH'))
+        || voices.find((v) => v.lang.startsWith('ar-EG'))
+        || voices.find((v) => v.lang === 'ar')
+        || voices.find((v) => v.lang.startsWith('ar'))
+      if (arVoice) {
+        utterance.voice = arVoice
+      }
+      utterance.lang = arVoice?.lang || 'ar-SA'
+      utterance.rate = 0.75  // Slower for Quran clarity
+      utterance.pitch = 0.9
+    } else {
+      const enVoice = voices.find((v) => v.lang.startsWith('en-US')) || voices.find((v) => v.lang.startsWith('en'))
+      if (enVoice) utterance.voice = enVoice
+      utterance.lang = 'en-US'
+      utterance.rate = 0.95
+      utterance.pitch = 1.0
     }
-
-    utterance.lang = forceArabicVoice || isArabic ? 'ar-SA' : 'en-US'
-    utterance.rate = forceArabicVoice || isArabic ? 0.9 : 0.95
-    utterance.pitch = 1.0
     utterance.onstart = () => setSpeaking(true)
     utterance.onend = () => setSpeaking(false)
     utterance.onerror = () => {
