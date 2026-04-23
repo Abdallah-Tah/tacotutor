@@ -72,6 +72,8 @@ export const lessonAPI = {
     api.get('/lessons', { params: { subject, level } }),
   get: (lessonId: string) =>
     api.get(`/lessons/${lessonId}`),
+  getPublic: (lessonId: string) =>
+    fetch(`${window.location.origin}/api/lessons/${lessonId}`).then(r => r.json()).then(data => ({ data })),
   assign: (childId: string, lessonId: string) =>
     api.post('/lessons/assign', { child_id: childId, lesson_id: lessonId }),
   getAssignments: (childId: string, status?: string) =>

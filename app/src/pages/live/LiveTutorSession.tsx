@@ -51,7 +51,7 @@ export default function LiveTutorSession() {
       return
     }
 
-    lessonAPI.get(lessonId)
+    lessonAPI.getPublic(lessonId)
       .then((res) => {
         setLesson(res.data)
         setCurrentAyahIndex(0)
