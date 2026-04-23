@@ -5,6 +5,7 @@ TacoTutor Backend - Session tracking endpoints.
 from datetime import datetime
 from typing import List, Optional
 
+import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,13 @@ from backend.core.database import get_db
 from backend.api.auth import get_current_parent, get_current_user
 from backend.models import User, SessionHistory, RecitationAttempt, Child
 from backend.schemas import SessionCreate, SessionResponse, SessionState
+
+def _uuid_or_404(value: str) -> _uuid.UUID:
+    try:
+        return _uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
 
 router = APIRouter(tags=["sessions"])
 
@@ -22,7 +30,7 @@ def start_session(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    child = db.query(Child).filter(Child.id == data.child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(str(data.child_id)), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
 
@@ -39,7 +47,7 @@ def end_session(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    session = db.query(SessionHistory).filter(SessionHistory.id == session_id).first()
+    session = db.query(SessionHistory).filter(SessionHistory.id == _uuid_or_404(session_id)).first()
     if not session or session.child.parent_id != parent.id:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -58,7 +66,7 @@ def list_sessions(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
     return (
@@ -75,7 +83,7 @@ def get_session(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    session = db.query(SessionHistory).filter(SessionHistory.id == session_id).first()
+    session = db.query(SessionHistory).filter(SessionHistory.id == _uuid_or_404(session_id)).first()
     if not session or session.child.parent_id != parent.id:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
@@ -121,7 +129,7 @@ def kid_dashboard(
     from backend.schemas import KidDashboard
     from backend.models import Reward, LessonAssignment, ProgressRecord
 
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
 

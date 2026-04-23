@@ -4,6 +4,7 @@ TacoTutor Backend - Users and children endpoints.
 
 from typing import List
 
+import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,13 @@ from backend.schemas import (
     ChildCreate, ChildResponse, StudentProfileUpdate, StudentProfileResponse,
     ProgressResponse
 )
+
+def _uuid_or_404(value: str) -> _uuid.UUID:
+    try:
+        return _uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
 
 router = APIRouter(tags=["users"])
 
@@ -52,7 +60,7 @@ def list_children(db: Session = Depends(get_db), parent: User = Depends(get_curr
 
 @router.get("/children/{child_id}", response_model=ChildResponse)
 def get_child(child_id: str, db: Session = Depends(get_db), parent: User = Depends(get_current_parent)):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
     return child
@@ -60,7 +68,7 @@ def get_child(child_id: str, db: Session = Depends(get_db), parent: User = Depen
 
 @router.delete("/children/{child_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_child(child_id: str, db: Session = Depends(get_db), parent: User = Depends(get_current_parent)):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
     db.delete(child)
@@ -71,7 +79,7 @@ def delete_child(child_id: str, db: Session = Depends(get_db), parent: User = De
 
 @router.get("/children/{child_id}/profile", response_model=StudentProfileResponse)
 def get_profile(child_id: str, db: Session = Depends(get_db), parent: User = Depends(get_current_parent)):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child or not child.profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     return child.profile
@@ -84,7 +92,7 @@ def update_profile(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child or not child.profile:
         raise HTTPException(status_code=404, detail="Profile not found")
     profile = child.profile
@@ -107,7 +115,7 @@ def update_profile(
 
 @router.get("/children/{child_id}/progress", response_model=List[ProgressResponse])
 def get_progress(child_id: str, db: Session = Depends(get_db), parent: User = Depends(get_current_parent)):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
     return db.query(ProgressRecord).filter(ProgressRecord.child_id == child_id).all()

@@ -4,6 +4,7 @@ TacoTutor Backend - Instruction file endpoints.
 
 from typing import List, Optional
 
+import uuid as _uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,13 @@ from backend.core.database import get_db
 from backend.api.auth import get_current_parent
 from backend.models import User, InstructionFile, Child
 from backend.schemas import InstructionFileCreate, InstructionFileResponse
+
+def _uuid_or_404(value: str) -> _uuid.UUID:
+    try:
+        return _uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
 
 router = APIRouter(tags=["instructions"])
 
@@ -22,7 +30,7 @@ def create_instruction(
     parent: User = Depends(get_current_parent)
 ):
     if data.child_id:
-        child = db.query(Child).filter(Child.id == data.child_id, Child.parent_id == parent.id).first()
+        child = db.query(Child).filter(Child.id == _uuid_or_404(str(data.child_id)), Child.parent_id == parent.id).first()
         if not child:
             raise HTTPException(status_code=404, detail="Child not found")
 
@@ -47,7 +55,7 @@ def list_instructions(
 ):
     query = db.query(InstructionFile)
     if child_id:
-        child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+        child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
         if not child:
             raise HTTPException(status_code=404, detail="Child not found")
         query = query.filter(InstructionFile.child_id == child_id)
@@ -62,7 +70,7 @@ def get_instruction(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    instruction = db.query(InstructionFile).filter(InstructionFile.id == instruction_id).first()
+    instruction = db.query(InstructionFile).filter(InstructionFile.id == _uuid_or_404(instruction_id)).first()
     if not instruction:
         raise HTTPException(status_code=404, detail="Instruction not found")
     if instruction.child_id:
@@ -79,7 +87,7 @@ def update_instruction(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    instruction = db.query(InstructionFile).filter(InstructionFile.id == instruction_id).first()
+    instruction = db.query(InstructionFile).filter(InstructionFile.id == _uuid_or_404(instruction_id)).first()
     if not instruction:
         raise HTTPException(status_code=404, detail="Instruction not found")
 
@@ -100,7 +108,7 @@ def delete_instruction(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    instruction = db.query(InstructionFile).filter(InstructionFile.id == instruction_id).first()
+    instruction = db.query(InstructionFile).filter(InstructionFile.id == _uuid_or_404(instruction_id)).first()
     if not instruction:
         raise HTTPException(status_code=404, detail="Instruction not found")
     db.delete(instruction)

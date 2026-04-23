@@ -2,6 +2,7 @@
 TacoTutor Backend - Lessons and assignments endpoints.
 """
 
+import uuid as _uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,6 +17,13 @@ from backend.schemas import (
 )
 
 router = APIRouter(tags=["lessons"])
+
+
+def _uuid_or_404(value: str) -> _uuid.UUID:
+    try:
+        return _uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
 
 
 # ─── Lessons ───────────────────────────────────────────
@@ -45,7 +53,8 @@ def list_lessons(
 
 @router.get("/{lesson_id}", response_model=LessonResponse)
 def get_lesson(lesson_id: str, db: Session = Depends(get_db)):
-    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    lid = _uuid_or_404(lesson_id)
+    lesson = db.query(Lesson).filter(Lesson.id == lid).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return lesson
@@ -53,7 +62,8 @@ def get_lesson(lesson_id: str, db: Session = Depends(get_db)):
 
 @router.delete("/{lesson_id}")
 def delete_lesson(lesson_id: str, db: Session = Depends(get_db)):
-    lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+    lid = _uuid_or_404(lesson_id)
+    lesson = db.query(Lesson).filter(Lesson.id == lid).first()
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     db.delete(lesson)
@@ -69,18 +79,21 @@ def assign_lesson(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    child = db.query(Child).filter(Child.id == data.child_id, Child.parent_id == parent.id).first()
+    child_uuid = _uuid_or_404(str(data.child_id))
+    lesson_uuid = _uuid_or_404(str(data.lesson_id))
+
+    child = db.query(Child).filter(Child.id == child_uuid, Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
 
     existing = db.query(LessonAssignment).filter(
-        LessonAssignment.child_id == data.child_id,
-        LessonAssignment.lesson_id == data.lesson_id
+        LessonAssignment.child_id == child_uuid,
+        LessonAssignment.lesson_id == lesson_uuid
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="Lesson already assigned to this child")
 
-    assignment = LessonAssignment(child_id=data.child_id, lesson_id=data.lesson_id)
+    assignment = LessonAssignment(child_id=child_uuid, lesson_id=lesson_uuid)
     db.add(assignment)
     db.commit()
     db.refresh(assignment)
@@ -94,11 +107,12 @@ def get_child_assignments(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == parent.id).first()
+    cid = _uuid_or_404(child_id)
+    child = db.query(Child).filter(Child.id == cid, Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
 
-    query = db.query(LessonAssignment).filter(LessonAssignment.child_id == child_id)
+    query = db.query(LessonAssignment).filter(LessonAssignment.child_id == cid)
     if status:
         query = query.filter(LessonAssignment.status == status)
     return query.order_by(LessonAssignment.assigned_at.desc()).all()
@@ -110,11 +124,7 @@ def unassign_lesson(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    import uuid
-    try:
-        aid = uuid.UUID(assignment_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid assignment ID")
+    aid = _uuid_or_404(assignment_id)
     assignment = db.query(LessonAssignment).filter(LessonAssignment.id == aid).first()
     if not assignment or assignment.child.parent_id != parent.id:
         raise HTTPException(status_code=404, detail="Assignment not found")
@@ -130,7 +140,8 @@ def update_assignment(
     db: Session = Depends(get_db),
     parent: User = Depends(get_current_parent)
 ):
-    assignment = db.query(LessonAssignment).filter(LessonAssignment.id == assignment_id).first()
+    aid = _uuid_or_404(assignment_id)
+    assignment = db.query(LessonAssignment).filter(LessonAssignment.id == aid).first()
     if not assignment or assignment.child.parent_id != parent.id:
         raise HTTPException(status_code=404, detail="Assignment not found")
     assignment.status = status
