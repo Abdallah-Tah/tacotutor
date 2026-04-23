@@ -95,7 +95,17 @@ def _load_lesson_context(lesson_id: str | None) -> dict | None:
         db.close()
 
 
-def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_index: int = 0, include_greeting: bool = False) -> str:
+def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_index: int = 0, include_greeting: bool = False, child_gender: str | None = None) -> str:
+    is_boy = child_gender == 'male'
+    # Arabic gender-specific terms
+    child_noun = "الطفل" if is_boy else "الطفلة"  # boy/girl
+    pron_obj = "منه" if is_boy else "منها"        # from him/her  
+    pron_to = "له" if is_boy else "لها"           # to him/her
+    pron_him = "أن يقرأ" if is_boy else "أن تقرأ" # to read (m/f)
+    pron_ask = "اطلب منه" if is_boy else "اطلب منها" # ask him/her
+    pron_intro = "عرّفه" if is_boy else "عرّفها"   # introduce him/her
+    pron_repeat = "أن يكرره" if is_boy else "أن تكرره" # to repeat it
+
     if lesson_context and lesson_context["content"].get("ayahs"):
         ayahs = lesson_context["content"]["ayahs"]
         ayah_index = max(0, min(ayah_index, len(ayahs) - 1))
@@ -103,25 +113,23 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
         ayah_text = ayahs[ayah_index]
         ayah_number = ayah_index + 1
         total_ayahs = len(ayahs)
-
-        # Build context about position in surah
         position_info = f"هذه الآية رقم {ayah_number} من {total_ayahs} آيات في سورة {surah_name}."
 
         if include_greeting:
             return (
-                f"أنت معلم قرآن لطفلة اسمها {child_name}. الدرس اليوم هو سورة {surah_name}. "
+                f"أنت معلم قرآن لـ{child_noun} اسم{pron_to} {child_name}. الدرس اليوم هو سورة {surah_name}. "
                 f"{position_info} "
-                f"سلّم على {child_name} بحرارة، ثم اشرح لها أنكم ستتعلمون سورة {surah_name} معاً. "
-                f"ثم اطلب منها أن تقرأ الآية {ayah_number} وهي: {ayah_text}. "
+                f"سلّم على {child_name} بحرارة، ثم اشرح {pron_to} أنكم ستتعلمون سورة {surah_name} معاً. "
+                f"ثم {pron_ask} {pron_him} الآية {ayah_number} وهي: {ayah_text}. "
                 "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
                 "كن مشجعاً ولطيفاً. اذكر الآية كاملة بدون اختصار. "
                 "اكتب 2-3 جمل مفيدة تتضمن التحيّة والآية المطلوبة وتشجيع بسيط."
             )
         return (
-            f"أنت معلم قرآن لطفلة اسمها {child_name}. "
+            f"أنت معلم قرآن لـ{child_noun} اسم{pron_to} {child_name}. "
             f"{position_info} "
             f"الآية المطلوبة الآن هي: {ayah_text}. "
-            f"اشرح لـ {child_name} بلطف أن هذه الآية التالية، واطلب منها أن تقرأها بتمهل. "
+            f"اشرح لـ {child_name} بلطف أن هذه الآية التالية، و{pron_ask} {pron_him} بتمهل. "
             "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
             "لا تسلّم مرة أخرى. كن مشجعاً. اذكر الآية كاملة بدون اختصار. "
             "اكتب 2-3 جمل تتضمن شرح بسيط والآية وتشجيع."
@@ -135,26 +143,26 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
 
         if include_greeting:
             return (
-                f"أنت معلم لطفلة اسمها {child_name}. الدرس اليوم هو تعلّم الحرف {letter_name} ({letter}). "
+                f"أنت معلم لـ{child_noun} اسم{pron_to} {child_name}. الدرس اليوم هو تعلّم الحرف {letter_name} ({letter}). "
                 f"{words_hint} "
-                f"سلّم على {child_name} بحرارة، ثم عرّفها على الحرف {letter_name} واطلب منها أن تكرره مرة واحدة. "
+                f"سلّم على {child_name} بحرارة، ثم {pron_intro} على الحرف {letter_name} و{pron_ask} {pron_repeat} مرة واحدة. "
                 "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً. اكتب 2-3 جمل."
             )
         return (
-            f"أنت معلم لطفلة اسمها {child_name}. "
-            f"اطلب منها أن تكرر الحرف {letter_name} ({letter}) مرة واحدة. "
+            f"أنت معلم لـ{child_noun} اسم{pron_to} {child_name}. "
+            f"{pron_ask} {pron_repeat} مرة واحدة. "
             "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. "
             "لا تسلّم مرة أخرى. كن مشجعاً. اكتب 1-2 جمل."
         )
 
     if include_greeting:
         return (
-            f"أنت معلم لطفلة اسمها {child_name}. "
-            f"سلّم على {child_name} بحرارة وادعُها لبدء الدرس الأول اليوم. "
+            f"أنت معلم لـ{child_noun} اسم{pron_to} {child_name}. "
+            f"سلّم على {child_name} بحرارة وادعُ{pron_to} لبدء الدرس الأول اليوم. "
             "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً."
         )
     return (
-        f"أنت معلم لطفلة اسمها {child_name}. "
+        f"أنت معلم لـ{child_noun} اسم{pron_to} {child_name}. "
         f"وجّه {child_name} للمتابعة في الدرس الحالي. "
         "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. لا تسلّم مرة أخرى."
     )
@@ -180,6 +188,7 @@ async def realtime_ws(websocket: WebSocket):
     active_subject = subject
     active_system_prompt = _build_system_prompt(subject)
     active_child_name = "friend"
+    active_child_gender: str | None = None
     active_child_key = child_id or "student"
     active_lesson_context = None
     current_ayah_index = 0
@@ -250,6 +259,18 @@ async def realtime_ws(websocket: WebSocket):
 
             if msg_type == "session_start":
                 active_child_name = (msg.get("childName") or "friend").strip() or "friend"
+                # Load gender from DB if childId provided
+                cid = msg.get("childId")
+                if cid:
+                    try:
+                        db = SessionLocal()
+                        from backend.models import Child
+                        child_rec = db.query(Child).filter(Child.id == _uuid_or_404(cid)).first()
+                        if child_rec and child_rec.gender:
+                            active_child_gender = child_rec.gender
+                        db.close()
+                    except Exception:
+                        pass
                 active_child_key = (
                     (msg.get("childId") or msg.get("childName") or child_id or "student").strip() or "student"
                 )
@@ -269,6 +290,7 @@ async def realtime_ws(websocket: WebSocket):
                     active_lesson_context,
                     ayah_index=current_ayah_index,
                     include_greeting=True,
+                    child_gender=active_child_gender,
                 )
                 reply = await generate_reply(opening_prompt, active_system_prompt)
                 await send_tutor_message(reply, current_ayah_index)
@@ -285,6 +307,7 @@ async def realtime_ws(websocket: WebSocket):
                     active_lesson_context,
                     ayah_index=current_ayah_index,
                     include_greeting=False,
+                    child_gender=active_child_gender,
                 )
                 reply = await generate_reply(ayah_prompt, active_system_prompt)
                 await send_tutor_message(reply, current_ayah_index)

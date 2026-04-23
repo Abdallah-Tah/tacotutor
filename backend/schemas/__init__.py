@@ -53,6 +53,7 @@ class ChildBase(BaseModel):
     name: str
     age: Optional[int] = None
     avatar_color: str = "#6C63FF"
+    gender: Optional[str] = None  # "male" or "female"
 
 
 class ChildCreate(ChildBase):

@@ -15,6 +15,7 @@ const AVATARS = ['#6C63FF', '#10B981', '#F59E0B', '#EC4899', '#3B82F6']
 export default function AddChildModal({ open, onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [age, setAge] = useState('')
+  const [gender, setGender] = useState<string>('')
   const [avatarColor, setAvatarColor] = useState(AVATARS[0])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -22,6 +23,7 @@ export default function AddChildModal({ open, onClose, onCreated }: Props) {
   const reset = () => {
     setName('')
     setAge('')
+    setGender('')
     setAvatarColor(AVATARS[0])
     setError('')
     setLoading(false)
@@ -41,6 +43,7 @@ export default function AddChildModal({ open, onClose, onCreated }: Props) {
       const res = await userAPI.createChild({
         name: name.trim(),
         age: age ? Number(age) : undefined,
+        gender: gender || undefined,
         avatar_color: avatarColor,
       })
       onCreated(res.data)
@@ -113,6 +116,26 @@ export default function AddChildModal({ open, onClose, onCreated }: Props) {
                   placeholder="Optional"
                   className="input-field"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Gender</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setGender('male')}
+                    className={`flex-1 py-3 rounded-xl border-2 text-center font-semibold transition-all ${gender === 'male' ? 'border-blue-400 bg-blue-500/20 text-blue-300' : 'border-dark-input bg-dark-input text-muted hover:border-blue-400/50'}`}
+                  >
+                    👦 Boy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGender('female')}
+                    className={`flex-1 py-3 rounded-xl border-2 text-center font-semibold transition-all ${gender === 'female' ? 'border-pink-400 bg-pink-500/20 text-pink-300' : 'border-dark-input bg-dark-input text-muted hover:border-pink-400/50'}`}
+                  >
+                    👧 Girl
+                  </button>
+                </div>
               </div>
 
               <div>

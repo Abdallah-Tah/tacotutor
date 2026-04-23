@@ -49,7 +49,7 @@ export const authAPI = {
 };
 
 export const userAPI = {
-  createChild: (data: { name: string; age?: number; avatar_color?: string }) =>
+  createChild: (data: { name: string; age?: number; gender?: string; avatar_color?: string }) =>
     api.post('/users/children', data),
   listChildren: () =>
     api.get('/users/children'),

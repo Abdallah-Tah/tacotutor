@@ -12,6 +12,7 @@ export interface Child {
   name: string;
   age: number | null;
   avatar_color: string;
+  gender: string | null;  // "male" or "female"
   created_at: string;
 }
 

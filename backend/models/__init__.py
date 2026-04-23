@@ -42,6 +42,7 @@ class Child(Base):
     name = Column(String(100), nullable=False)
     age = Column(Integer, nullable=True)
     avatar_color = Column(String(20), default="#6C63FF")
+    gender = Column(String(10), nullable=True)  # "male" or "female"
     created_at = Column(DateTime, server_default=func.now())
 
     parent = relationship("User", back_populates="children")
