@@ -108,6 +108,33 @@ export default function LiveTutorSession() {
     }
   }
 
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const playServerAudio = (audioPath: string) => {
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause()
+      }
+      const baseUrl = window.location.origin
+      const audio = new Audio(`${baseUrl}${audioPath}`)
+      audioRef.current = audio
+      audio.onplay = () => setSpeaking(true)
+      audio.onended = () => setSpeaking(false)
+      audio.onerror = () => {
+        setSpeaking(false)
+        // Fallback to browser TTS
+        if (tutorText) speakText(tutorText, true)
+      }
+      audio.play().catch(() => {
+        // Autoplay blocked — try after user interaction
+        setSpeaking(false)
+      })
+    } catch {
+      // Fallback to browser TTS
+      if (tutorText) speakText(tutorText, true)
+    }
+  }
+
   const speakText = (text: string, force = false) => {
     if ((!voiceEnabled && !force) || !('speechSynthesis' in window) || !text.trim()) return
 
@@ -228,7 +255,12 @@ export default function LiveTutorSession() {
           lastPromptedAyahRef.current = msg.ayahIndex
         }
         setTutorText(msg.text)
-        speakText(msg.text)
+        // Play server-generated audio if available, fallback to browser TTS
+        if (msg.audio && voiceEnabled) {
+          playServerAudio(msg.audio)
+        } else {
+          speakText(msg.text)
+        }
         break
       case 'word_highlight':
         setHighlightedWord(msg.wordIndex, msg.correct)

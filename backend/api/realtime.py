@@ -30,6 +30,32 @@ engine = TutorEngine()
 MODEL = os.environ.get("HUGGINGFACE_TEXT_MODEL", "Qwen/Qwen2.5-7B-Instruct:fastest")
 TTS_DIR = Path("/tmp/tacotutor_tts")
 TTS_DIR.mkdir(exist_ok=True)
+
+# Arabic voices for edge-tts (priority order)
+ARABIC_VOICES = ["ar-SA-HamedNeural", "ar-SA-ZariNeural", "ar-EG-SalmaNeural", "ar-AE-FatimaNeural"]
+
+
+def _generate_tts(text: str, is_arabic: bool = False) -> str | None:
+    """Generate TTS audio using edge-tts. Returns filename or None."""
+    import hashlib
+    if not text.strip():
+        return None
+    h = hashlib.md5(text.encode()).hexdigest()[:12]
+    filename = f"tts_{h}.mp3"
+    filepath = TTS_DIR / filename
+    if filepath.exists():
+        return filename
+    voice = ARABIC_VOICES[0] if is_arabic else "en-US-DavisNeural"
+    try:
+        subprocess.run(
+            ["edge-tts", "--text", text[:500], "--voice", voice, "--write-media", str(filepath)],
+            capture_output=True, timeout=15,
+        )
+        if filepath.exists() and filepath.stat().st_size > 100:
+            return filename
+    except Exception as e:
+        print(f"[TTS] edge-tts failed: {e}")
+    return None
 OPENCLAW_SKILL_TEXT = load_openclaw_skill()
 OPENCLAW_MEMORY = OpenClawMemory()
 
@@ -158,6 +184,25 @@ async def realtime_ws(websocket: WebSocket):
     active_lesson_context = None
     current_ayah_index = 0
 
+    async def send_tutor_message(text: str, ayah_index: int | None = None):
+        """Send tutor text + generate TTS audio."""
+        import asyncio as _aio
+        is_arabic = active_subject == "quran" or any("\u0600" <= c <= "\u06FF" for c in text)
+        try:
+            loop = _aio.get_running_loop()
+            audio_file = await loop.run_in_executor(None, _generate_tts, text, is_arabic)
+        except Exception as e:
+            print(f"[TTS] run_in_executor failed: {e}")
+            audio_file = None
+        msg = {"type": "assistant_sentence", "text": text}
+        if ayah_index is not None:
+            msg["ayahIndex"] = ayah_index
+        if audio_file:
+            msg["audio"] = f"/api/realtime/audio/{audio_file}"
+        await websocket.send_json(msg)
+        await websocket.send_json({"type": "turn_complete"})
+
+
     def _build_openclaw_system_prompt(system_prompt_text: str | None = None) -> str:
         memory_block = OPENCLAW_MEMORY.get_context_block(active_child_key, active_subject)
         return compose_openclaw_prompt(
@@ -226,12 +271,7 @@ async def realtime_ws(websocket: WebSocket):
                     include_greeting=True,
                 )
                 reply = await generate_reply(opening_prompt, active_system_prompt)
-                await websocket.send_json({
-                    "type": "assistant_sentence",
-                    "text": reply,
-                    "ayahIndex": current_ayah_index,
-                })
-                await websocket.send_json({"type": "turn_complete"})
+                await send_tutor_message(reply, current_ayah_index)
 
             elif msg_type == "set_ayah":
                 ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs") or []
@@ -247,12 +287,7 @@ async def realtime_ws(websocket: WebSocket):
                     include_greeting=False,
                 )
                 reply = await generate_reply(ayah_prompt, active_system_prompt)
-                await websocket.send_json({
-                    "type": "assistant_sentence",
-                    "text": reply,
-                    "ayahIndex": current_ayah_index,
-                })
-                await websocket.send_json({"type": "turn_complete"})
+                await send_tutor_message(reply, current_ayah_index)
 
             elif msg_type == "text":
                 raw_user_text = (msg.get("data", "") or "").strip()
@@ -273,8 +308,7 @@ async def realtime_ws(websocket: WebSocket):
                         "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً."
                     )
                 reply = await generate_reply(user_text, remember_user_text=raw_user_text)
-                await websocket.send_json({"type": "assistant_sentence", "text": reply, "ayahIndex": current_ayah_index})
-                await websocket.send_json({"type": "turn_complete"})
+                await send_tutor_message(reply, current_ayah_index)
 
             elif msg_type == "audio_chunk":
                 # Client sends base64-encoded audio chunk
@@ -381,12 +415,7 @@ async def realtime_ws(websocket: WebSocket):
                             "Reply in simple Arabic only. Do not use English."
                         )
                         reply = await generate_reply(feedback_prompt, remember_user_text=transcription)
-                        await websocket.send_json({
-                            "type": "assistant_sentence",
-                            "text": reply,
-                            "ayahIndex": current_ayah_index,
-                        })
-                        await websocket.send_json({"type": "turn_complete"})
+                        await send_tutor_message(reply, current_ayah_index)
                     else:
                         # No target ayah — just send transcription for general feedback
                         user_text = (
@@ -396,12 +425,7 @@ async def realtime_ws(websocket: WebSocket):
                             "Reply in simple Arabic only. Do not use English."
                         )
                         reply = await generate_reply(user_text, remember_user_text=transcription)
-                        await websocket.send_json({
-                            "type": "assistant_sentence",
-                            "text": reply,
-                            "ayahIndex": current_ayah_index,
-                        })
-                        await websocket.send_json({"type": "turn_complete"})
+                        await send_tutor_message(reply, current_ayah_index)
 
                 except Exception as e:
                     print(f"[REALTIME] Audio processing error: {e}")
