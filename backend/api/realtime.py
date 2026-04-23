@@ -95,9 +95,28 @@ def _load_lesson_context(lesson_id: str | None) -> dict | None:
         db.close()
 
 
-def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_index: int = 0, include_greeting: bool = False, child_gender: str | None = None) -> str:
-    is_boy = child_gender == 'male'
-    # Arabic gender-specific terms
+def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_index: int = 0, include_greeting: bool = False, child_gender: str | None = None, subject: str = "quran") -> str:
+    is_quran = subject == "quran"
+    is_boy = child_gender == "male"
+
+    # Non-Quran subjects use English
+    if not is_quran:
+        subject_name = subject.capitalize()
+        lesson_title = lesson_context["title"] if lesson_context else subject_name
+        if include_greeting:
+            return (
+                f"You are a friendly tutor for a child named {child_name}. "
+                f"The lesson today is {lesson_title} ({subject_name}). "
+                f"Greet {child_name} warmly, then introduce today's topic and start the first step. "
+                "Be encouraging and keep it to 2-3 sentences. Use simple language for a child."
+            )
+        return (
+            f"You are tutoring {child_name} in {subject_name}. "
+                f"The current lesson is {lesson_title}. "
+                f"Guide {child_name} to the next step. Be encouraging, keep it to 1-2 sentences. Do not greet again."
+        )
+
+    # Quran prompts in Arabic with gender-aware language
     child_noun = "الطفل" if is_boy else "الطفلة"  # boy/girl
     pron_obj = "منه" if is_boy else "منها"        # from him/her  
     pron_to = "له" if is_boy else "لها"           # to him/her
@@ -291,6 +310,7 @@ async def realtime_ws(websocket: WebSocket):
                     ayah_index=current_ayah_index,
                     include_greeting=True,
                     child_gender=active_child_gender,
+                    subject=active_subject,
                 )
                 reply = await generate_reply(opening_prompt, active_system_prompt)
                 await send_tutor_message(reply, current_ayah_index)
@@ -308,6 +328,7 @@ async def realtime_ws(websocket: WebSocket):
                     ayah_index=current_ayah_index,
                     include_greeting=False,
                     child_gender=active_child_gender,
+                    subject=active_subject,
                 )
                 reply = await generate_reply(ayah_prompt, active_system_prompt)
                 await send_tutor_message(reply, current_ayah_index)
@@ -318,17 +339,28 @@ async def realtime_ws(websocket: WebSocket):
                 ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs") or []
                 if ayahs:
                     target_ayah = ayahs[max(0, min(current_ayah_index, len(ayahs) - 1))]
-                    user_text = (
-                        f"الآية المطلوبة: {target_ayah}. "
-                        f"الطفلة قالت: {raw_user_text}. "
-                        "قيّم محاولتها باختصار وشجّعها، ثم أعطها الخطوة التالية لنفس الآية. "
-                        "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً."
-                    )
+                    if active_subject == "quran":
+                        user_text = (
+                            f"الآية المطلوبة: {target_ayah}. "
+                            f"الطفلة قالت: {raw_user_text}. "
+                            "قيّم محاولتها باختصار وشجّعها، ثم أعطها الخطوة التالية لنفس الآية. "
+                            "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً ولطيفاً."
+                        )
+                    else:
+                        user_text = (
+                            f"The child said: {raw_user_text}. "
+                            "Briefly assess the attempt, encourage, and give the next step. Be friendly and keep it to 1-2 sentences."
+                        )
                 elif active_subject == "quran":
                     user_text = (
                         f"الطفلة قالت: {raw_user_text}. "
                         "قيّم محاولتها باختصار وشجّعها. "
                         "اكتب ردك بالعربية الفصحى فقط. لا تستخدم الإنجليزية أبداً. كن مشجعاً."
+                    )
+                else:
+                    user_text = (
+                        f"The child said: {raw_user_text}. "
+                        "Give brief encouraging feedback. Keep it to 1-2 sentences."
                     )
                 reply = await generate_reply(user_text, remember_user_text=raw_user_text)
                 await send_tutor_message(reply, current_ayah_index)
