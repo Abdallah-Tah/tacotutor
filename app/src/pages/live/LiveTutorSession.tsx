@@ -228,8 +228,35 @@ export default function LiveTutorSession() {
           setWordCorrectness(msg.mistakes.map((m: any) => !m.incorrect))
         }
         break
+      case 'transcription':
+        setTranscript(msg.text)
+        setListening(false)
+        break
+      case 'processing':
+        setProcessing(true)
+        setTutorText(msg.message || 'جاري التحليل...')
+        break
+      case 'recitation_feedback':
+        setProcessing(false)
+        if (typeof msg.accuracy === 'number') {
+          setRecitationAccuracy(msg.accuracy)
+        }
+        // Update word-level correctness display
+        if (msg.correct_words || msg.missed_words) {
+          const correctness: Record<number, boolean> = {}
+          const targetWords = words
+          const correctSet = new Set(msg.correct_words || [])
+          const missedSet = new Set(msg.missed_words || [])
+          targetWords.forEach((w: string, i: number) => {
+            if (missedSet.has(w)) correctness[i] = false
+            else if (correctSet.has(w)) correctness[i] = true
+          })
+          setWordCorrectness(Object.values(correctness))
+        }
+        break
       case 'turn_complete':
         setSpeaking(false)
+        setProcessing(false)
         break
       case 'error':
         setError(msg.message)
@@ -237,14 +264,63 @@ export default function LiveTutorSession() {
     }
   }
 
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const [processing, setProcessing] = useState(false)
+  const [recitationAccuracy, setRecitationAccuracy] = useState(0)
+
   const toggleListening = () => {
-    if (!wsRef.current) return
+    if (!wsRef.current || !connected) return
+
     if (isListening) {
-      wsRef.current.send(JSON.stringify({ type: 'barge_in' }))
+      // Stop recording and send audio
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
       setListening(false)
     } else {
-      // Browser would send audio frames here
-      setListening(true)
+      // Start recording
+      setProcessing(false)
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then((stream) => {
+          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+          mediaRecorderRef.current = mediaRecorder
+          audioChunksRef.current = []
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunksRef.current.push(event.data)
+            }
+          }
+
+          mediaRecorder.onstop = async () => {
+            // Stop all tracks
+            stream.getTracks().forEach((t) => t.stop())
+
+            if (audioChunksRef.current.length === 0 || !wsRef.current) return
+
+            // Combine and send as base64
+            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+            const reader = new FileReader()
+            reader.onload = () => {
+              const base64 = (reader.result as string).split(',')[1]
+              if (base64 && wsRef.current) {
+                wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
+                wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
+                setProcessing(true)
+              }
+            }
+            reader.readAsDataURL(blob)
+          }
+
+          mediaRecorder.start(500) // collect every 500ms
+          setListening(true)
+          setTutorText('')
+        })
+        .catch((err) => {
+          console.error('Mic error:', err)
+          setError('Microphone access denied. Please allow mic access.')
+        })
     }
   }
 
@@ -473,13 +549,16 @@ export default function LiveTutorSession() {
               <div className="mt-8 flex items-center justify-center gap-4">
                 <button
                   onClick={toggleListening}
-                  className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-all ${
-                    isListening
+                  disabled={processing}
+                  className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-all disabled:opacity-50 ${
+                    processing
+                      ? 'bg-yellow-500 shadow-yellow-500/30'
+                      : isListening
                       ? 'bg-secondary shadow-secondary/30 animate-pulse'
                       : 'bg-gradient-to-br from-primary to-secondary shadow-primary/30 hover:scale-105'
                   }`}
                 >
-                  {isListening ? <MicOff size={28} /> : <Mic size={28} />}
+                  {processing ? <span className="text-lg">⏳</span> : isListening ? <MicOff size={28} /> : <Mic size={28} />}
                 </button>
               </div>
             </div>
@@ -499,16 +578,16 @@ export default function LiveTutorSession() {
             <div className="p-3 rounded-xl bg-dark-input">
               <p className="text-xs text-muted uppercase tracking-wider mb-1">Status</p>
               <p className="text-sm font-semibold">
-                {isSpeaking ? 'Tutor speaking' : isListening ? 'Listening' : 'Idle'}
+                {processing ? 'تحليل...' : isSpeaking ? 'Tutor speaking' : isListening ? 'Listening' : 'Idle'}
               </p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
               <p className="text-xs text-muted uppercase tracking-wider mb-1">Accuracy</p>
               <div className="w-full h-2 bg-dark-card rounded-full overflow-hidden">
-                <div className="h-full bg-success rounded-full" style={{ width: '0%' }} />
+                <div className="h-full bg-success rounded-full" style={{ width: `${recitationAccuracy}%` }} />
               </div>
-              <p className="text-sm font-semibold mt-1">0%</p>
+              <p className="text-sm font-semibold mt-1">{recitationAccuracy}%</p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">

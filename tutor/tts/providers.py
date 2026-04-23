@@ -2,8 +2,6 @@
 TacoTutor TTS Provider — unified interface for text-to-speech backends.
 """
 
-import os
-import asyncio
 import base64
 import logging
 import re
@@ -12,6 +10,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import yaml
+
+from tutor.secrets import get_gemini_api_key
 
 log = logging.getLogger(__name__)
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "providers.yaml"
@@ -54,9 +54,7 @@ class GeminiTTSProvider(TTSProvider):
     """Google Gemini TTS — needs API key, very natural voices."""
 
     def __init__(self, cfg: dict):
-        self.api_key = os.environ.get(cfg["api_key_env"], "")
-        if not self.api_key:
-            raise ValueError(f"Missing env var: {cfg['api_key_env']}")
+        self.api_key = get_gemini_api_key()
         self.voices = {
             "en": cfg.get("voice_en", "Puck"),
             "ar": cfg.get("voice_ar", "Puck"),

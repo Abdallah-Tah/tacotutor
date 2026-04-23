@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
+from tutor.secrets import get_gemini_api_key, get_secret
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -27,15 +29,16 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
     # API Keys (keep existing env vars)
-    GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
-    OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
-    ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY: str = get_gemini_api_key(required=False)
+    OPENAI_API_KEY: str = get_secret("OPENAI_API_KEY", "")
+    ANTHROPIC_API_KEY: str = get_secret("ANTHROPIC_API_KEY", "")
 
     # CORS
     CORS_ORIGINS: list[str] = ["*"]
 
     class Config:
         env_file = str(REPO_ROOT / ".env")
+        extra = "ignore"
 
 
 settings = Settings()

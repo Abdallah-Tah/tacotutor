@@ -2,7 +2,6 @@
 TacoTutor STT Provider — unified interface for speech-to-text backends.
 """
 
-import os
 import base64
 import logging
 import mimetypes
@@ -10,6 +9,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import yaml
+
+from tutor.secrets import get_gemini_api_key, get_hf_api_key, resolve_secret
 
 log = logging.getLogger(__name__)
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "providers.yaml"
@@ -58,9 +59,7 @@ class DeepgramProvider(STTProvider):
     """Deepgram cloud STT — needs API key."""
 
     def __init__(self, cfg: dict):
-        self.api_key = os.environ.get(cfg["api_key_env"], "")
-        if not self.api_key:
-            raise ValueError(f"Missing env var: {cfg['api_key_env']}")
+        self.api_key = resolve_secret(cfg["api_key_env"])
         self.model = cfg.get("model", "nova-2")
 
     async def transcribe(self, audio_path: str, language: str = "auto") -> str:
@@ -86,9 +85,7 @@ class GeminiSTTProvider(STTProvider):
     """Gemini multimodal STT using uploaded audio bytes."""
 
     def __init__(self, cfg: dict):
-        self.api_key = os.environ.get(cfg["api_key_env"], "")
-        if not self.api_key:
-            raise ValueError(f"Missing env var: {cfg['api_key_env']}")
+        self.api_key = get_gemini_api_key()
         self.model = cfg.get("model", "gemini-2.5-flash")
 
     async def transcribe(self, audio_path: str, language: str = "auto") -> str:
@@ -126,10 +123,37 @@ class GeminiSTTProvider(STTProvider):
         return text
 
 
+class HuggingFaceSTTProvider(STTProvider):
+    """Hugging Face Whisper STT using the inference router."""
+
+    def __init__(self, cfg: dict):
+        self.api_key = get_hf_api_key()
+        self.model = cfg.get("model", "openai/whisper-large-v3-turbo")
+
+    async def transcribe(self, audio_path: str, language: str = "auto") -> str:
+        import httpx
+
+        with open(audio_path, "rb") as f:
+            audio_data = f.read()
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"https://router.huggingface.co/hf-inference/models/{self.model}",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "audio/wav",
+                },
+                content=audio_data,
+            )
+        resp.raise_for_status()
+        return (resp.json().get("text", "") or "").strip()
+
+
 STT_PROVIDERS = {
     "local": LocalWhisperProvider,
     "deepgram": DeepgramProvider,
     "gemini": GeminiSTTProvider,
+    "huggingface": HuggingFaceSTTProvider,
 }
 
 

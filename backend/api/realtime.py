@@ -1,25 +1,25 @@
 """
 TacoTutor Backend - WebSocket endpoint for live tutoring.
-Uses Gemini text generation over WebSocket and lets the browser speak replies.
+Uses Hugging Face chat completion for tutor replies and lets the browser speak them.
 """
 
 import json
 import os
 import tempfile
 import subprocess
+import httpx
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from google import genai
-from google.genai import types
 
-from backend.core.config import settings
 from backend.core.database import SessionLocal
 from backend.models import Lesson
-from backend.services.tutor_engine import TutorEngine, SessionState
+from backend.services.tutor_engine import TutorEngine
+from tutor.openclaw import OpenClawMemory, compose_openclaw_prompt, load_openclaw_skill
 from tutor.prompts import get_system_prompt
 from tutor.curriculum.lessons import get_curriculum
+from tutor.secrets import get_hf_api_key, get_secret
 from tutor.stt.providers import get_stt
 
 router = APIRouter(tags=["realtime"])
@@ -27,9 +27,11 @@ router = APIRouter(tags=["realtime"])
 # Initialize Tutor Engine
 engine = TutorEngine()
 
-MODEL = os.environ.get("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("HUGGINGFACE_TEXT_MODEL", "Qwen/Qwen2.5-7B-Instruct:fastest")
 TTS_DIR = Path("/tmp/tacotutor_tts")
 TTS_DIR.mkdir(exist_ok=True)
+OPENCLAW_SKILL_TEXT = load_openclaw_skill()
+OPENCLAW_MEMORY = OpenClawMemory()
 
 
 def _build_system_prompt(subject: str, lesson_level: int | None = None, lesson_content: dict | None = None) -> str:
@@ -45,9 +47,15 @@ def _load_lesson_context(lesson_id: str | None) -> dict | None:
     if not lesson_id:
         return None
 
+    import uuid as _uuid
+    try:
+        lesson_uuid = _uuid.UUID(lesson_id)
+    except ValueError:
+        return None
+
     db = SessionLocal()
     try:
-        lesson = db.query(Lesson).filter(Lesson.id == lesson_id).first()
+        lesson = db.query(Lesson).filter(Lesson.id == lesson_uuid).first()
         if not lesson:
             return None
         return {
@@ -119,23 +127,52 @@ async def realtime_ws(websocket: WebSocket):
 
     print(f"[REALTIME] New connection: session={session_id}, child={child_id}, subject={subject}")
 
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    try:
+        hf_api_key = get_hf_api_key()
+    except ValueError as exc:
+        await websocket.send_json({"type": "error", "message": str(exc)})
+        await websocket.close(code=1011)
+        return
+
     active_subject = subject
     active_system_prompt = _build_system_prompt(subject)
     active_child_name = "friend"
+    active_child_key = child_id or "student"
     active_lesson_context = None
     current_ayah_index = 0
 
-    async def generate_reply(user_text: str, system_prompt_text: str | None = None) -> str:
-        response = await client.aio.models.generate_content(
-            model=MODEL,
-            contents=user_text,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt_text or active_system_prompt,
-                temperature=0.7,
-            ),
+    def _build_openclaw_system_prompt(system_prompt_text: str | None = None) -> str:
+        memory_block = OPENCLAW_MEMORY.get_context_block(active_child_key, active_subject)
+        return compose_openclaw_prompt(
+            system_prompt_text or active_system_prompt,
+            OPENCLAW_SKILL_TEXT,
+            memory_block,
         )
-        return (response.text or "").strip()
+
+    async def generate_reply(
+        user_text: str,
+        system_prompt_text: str | None = None,
+        remember_user_text: str | None = None,
+    ) -> str:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                "https://router.huggingface.co/v1/chat/completions",
+                headers={"Authorization": f"Bearer {hf_api_key}"},
+                json={
+                    "model": MODEL,
+                    "messages": [
+                        {"role": "system", "content": _build_openclaw_system_prompt(system_prompt_text)},
+                        {"role": "user", "content": user_text},
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 256,
+                },
+            )
+        response.raise_for_status()
+        reply = (response.json()["choices"][0]["message"]["content"] or "").strip()
+        if remember_user_text:
+            OPENCLAW_MEMORY.remember_turn(active_child_key, active_subject, remember_user_text, reply)
+        return reply
 
     await websocket.send_json({
         "type": "session_state",
@@ -151,6 +188,9 @@ async def realtime_ws(websocket: WebSocket):
 
             if msg_type == "session_start":
                 active_child_name = (msg.get("childName") or "friend").strip() or "friend"
+                active_child_key = (
+                    (msg.get("childId") or msg.get("childName") or child_id or "student").strip() or "student"
+                )
                 active_lesson_context = _load_lesson_context(msg.get("lessonId"))
                 current_ayah_index = 0
 
@@ -198,31 +238,159 @@ async def realtime_ws(websocket: WebSocket):
                 await websocket.send_json({"type": "turn_complete"})
 
             elif msg_type == "text":
-                user_text = msg.get("data", "")
+                raw_user_text = (msg.get("data", "") or "").strip()
+                user_text = raw_user_text
                 ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs") or []
                 if ayahs:
                     target_ayah = ayahs[max(0, min(current_ayah_index, len(ayahs) - 1))]
                     user_text = (
                         f"Current target ayah: {target_ayah}. "
-                        f"The child said: {msg.get('data', '')}. "
+                        f"The child said: {raw_user_text}. "
                         "In one short, kid-friendly sentence, briefly assess the attempt and give the next tiny step for this same ayah. "
                         "Reply in simple Arabic only. Do not use English."
                     )
                 elif active_subject == "quran":
                     user_text = (
-                        f"The child said: {msg.get('data', '')}. "
+                        f"The child said: {raw_user_text}. "
                         "In one short, kid-friendly sentence, briefly assess the attempt and give the next tiny step. "
                         "Reply in simple Arabic only. Do not use English."
                     )
-                reply = await generate_reply(user_text)
+                reply = await generate_reply(user_text, remember_user_text=raw_user_text)
                 await websocket.send_json({"type": "assistant_sentence", "text": reply, "ayahIndex": current_ayah_index})
                 await websocket.send_json({"type": "turn_complete"})
 
-            elif msg_type == "audio":
-                await websocket.send_json({
-                    "type": "error",
-                    "message": "Live microphone streaming is not wired yet. Use text for now.",
-                })
+            elif msg_type == "audio_chunk":
+                # Client sends base64-encoded audio chunk
+                # Buffer chunks until client sends audio_end
+                if not hasattr(websocket, '_audio_buffer'):
+                    websocket._audio_buffer = []
+                import base64
+                chunk_data = msg.get("data", "")
+                if chunk_data:
+                    websocket._audio_buffer.append(base64.b64decode(chunk_data))
+
+            elif msg_type == "audio_end":
+                # Client finished recording — transcribe via HF Whisper
+                import base64
+                audio_chunks = getattr(websocket, '_audio_buffer', [])
+                websocket._audio_buffer = []
+
+                if not audio_chunks:
+                    await websocket.send_json({"type": "error", "message": "No audio received."})
+                    continue
+
+                try:
+                    await websocket.send_json({"type": "processing", "message": "جاري التحليل..."})
+
+                    # Combine chunks into single WAV-compatible blob
+                    raw_audio = b"".join(audio_chunks)
+
+                    # Transcribe via HuggingFace Inference API
+                    hf_api_key = get_secret("HF_API_KEY", "")
+                    if not hf_api_key:
+                        await websocket.send_json({"type": "error", "message": "HF API key not configured."})
+                        continue
+
+                    # Convert webm/opus to wav if needed using ffmpeg
+                    with tempfile.TemporaryDirectory(prefix="tacotutor-stt-") as tmpdir:
+                        raw_path = Path(tmpdir) / "input.webm"
+                        wav_path = Path(tmpdir) / "input.wav"
+
+                        with open(raw_path, "wb") as f:
+                            f.write(raw_audio)
+
+                        # Convert to 16kHz mono WAV
+                        conv_result = subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(raw_path), "-ac", "1", "-ar", "16000", str(wav_path)],
+                            capture_output=True, timeout=10,
+                        )
+                        if conv_result.returncode != 0:
+                            # Maybe it's already WAV? Try direct
+                            wav_path = raw_path
+                            if not raw_audio[:4] == b'RIFF':
+                                await websocket.send_json({"type": "error", "message": "Audio conversion failed."})
+                                continue
+
+                        # Call HuggingFace Whisper
+                        with open(wav_path, "rb") as af:
+                            audio_bytes = af.read()
+
+                        async with httpx.AsyncClient(timeout=30) as client:
+                            resp = await client.post(
+                                "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo",
+                                headers={
+                                    "Authorization": f"Bearer {hf_api_key}",
+                                    "Content-Type": "audio/wav",
+                                },
+                                content=audio_bytes,
+                            )
+
+                        if resp.status_code != 200:
+                            print(f"[REALTIME] HF STT error: {resp.status_code} {resp.text}")
+                            await websocket.send_json({"type": "error", "message": "Speech recognition failed."})
+                            continue
+
+                        result = resp.json()
+                        transcription = (result.get("text", "") or "").strip()
+
+                    if not transcription:
+                        await websocket.send_json({"type": "transcription", "text": "", "words": []})
+                        continue
+
+                    await websocket.send_json({"type": "transcription", "text": transcription})
+
+                    # Compare against target ayah
+                    ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs") or []
+                    if ayahs and active_lesson_context:
+                        target_ayah = ayahs[max(0, min(current_ayah_index, len(ayahs) - 1))]
+                        comparison = _compare_recitation(transcription, target_ayah)
+                        await websocket.send_json({
+                            "type": "recitation_feedback",
+                            "accuracy": comparison["accuracy"],
+                            "correct_words": comparison["correct_words"],
+                            "missed_words": comparison["missed_words"],
+                            "extra_words": comparison["extra_words"],
+                            "target_ayah": target_ayah,
+                        })
+
+                        # Generate kid-friendly feedback with the HF text model
+                        feedback_prompt = (
+                            f"The child recited: {transcription}\n"
+                            f"Target ayah: {target_ayah}\n"
+                            f"Accuracy: {comparison['accuracy']}%\n"
+                            f"Missed words: {', '.join(comparison['missed_words'])}\n"
+                            f"The child's name is {active_child_name}. "
+                            f"In one short, encouraging Arabic sentence, give feedback on this recitation. "
+                            "Reply in simple Arabic only. Do not use English."
+                        )
+                        reply = await generate_reply(feedback_prompt, remember_user_text=transcription)
+                        await websocket.send_json({
+                            "type": "assistant_sentence",
+                            "text": reply,
+                            "ayahIndex": current_ayah_index,
+                        })
+                        await websocket.send_json({"type": "turn_complete"})
+                    else:
+                        # No target ayah — just send transcription for general feedback
+                        user_text = (
+                            f"The child recited: {transcription}. "
+                            "In one short, encouraging Arabic sentence, give feedback. "
+                            f"The child's name is {active_child_name}. "
+                            "Reply in simple Arabic only. Do not use English."
+                        )
+                        reply = await generate_reply(user_text, remember_user_text=transcription)
+                        await websocket.send_json({
+                            "type": "assistant_sentence",
+                            "text": reply,
+                            "ayahIndex": current_ayah_index,
+                        })
+                        await websocket.send_json({"type": "turn_complete"})
+
+                except Exception as e:
+                    print(f"[REALTIME] Audio processing error: {e}")
+                    import traceback; traceback.print_exc()
+                    await websocket.send_json({"type": "error", "message": f"Audio error: {str(e)[:100]}"})
+
 
             elif msg_type == "barge_in":
                 await websocket.send_json({"type": "turn_complete", "reason": "barge_in"})
@@ -295,6 +463,50 @@ async def get_audio(audio_name: str):
         raise HTTPException(status_code=404, detail="Audio not found")
         
     return FileResponse(path)
+
+
+def _compare_recitation(transcription: str, reference: str) -> dict:
+    """Compare transcribed recitation against reference ayah text.
+    Returns word-level accuracy feedback."""
+    import re
+
+    def normalize(s: str) -> list[str]:
+        # Remove diacritics/tashkeel for comparison, split into words
+        # Keep base letters only
+        s = re.sub(r'[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]', '', s)
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s.split()
+
+    ref_words = normalize(reference)
+    rec_words = normalize(transcription)
+
+    if not ref_words:
+        return {"accuracy": 0, "correct_words": [], "missed_words": [], "extra_words": rec_words}
+
+    # Simple alignment: find matching words in order
+    correct = []
+    missed = []
+    rec_idx = 0
+    for ref_w in ref_words:
+        found = False
+        for j in range(rec_idx, min(rec_idx + 3, len(rec_words))):  # look ahead 2 words
+            if rec_words[j] == ref_w:
+                correct.append(ref_w)
+                rec_idx = j + 1
+                found = True
+                break
+        if not found:
+            missed.append(ref_w)
+
+    extra = rec_words[rec_idx:] if rec_idx < len(rec_words) else []
+    accuracy = round(len(correct) / len(ref_words) * 100) if ref_words else 0
+
+    return {
+        "accuracy": accuracy,
+        "correct_words": correct,
+        "missed_words": missed,
+        "extra_words": extra,
+    }
 
 
 def shutil_copyfileobj(fsrc, fdst, length=16*1024):

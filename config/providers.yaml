@@ -3,9 +3,9 @@
 # Each provider has its own settings block
 
 active:
-  llm: gemini        # ollama | openai | anthropic | gemini | minimax | glm | openrouter
-  stt: gemini        # local (whisper) | deepgram | gemini
-  tts: gemini        # edge | gemini
+  llm: huggingface   # ollama | openai | anthropic | gemini | huggingface | minimax | glm | openrouter
+  stt: huggingface   # local (whisper) | deepgram | gemini | huggingface
+  tts: edge          # edge | gemini
 
 # ─── LLM Providers ───────────────────────────────────────────
 
@@ -32,6 +32,13 @@ llm:
   gemini:
     api_key_env: "GEMINI_API_KEY"
     model: "gemini-2.5-flash"
+    temperature: 0.7
+    max_tokens: 512
+
+  huggingface:
+    api_key_env: "HF_API_KEY"
+    base_url: "https://router.huggingface.co/v1"
+    model: "Qwen/Qwen2.5-7B-Instruct:fastest"
     temperature: 0.7
     max_tokens: 512
 
@@ -73,6 +80,11 @@ stt:
     model: "gemini-2.5-flash"
     language: "auto"
 
+  huggingface:
+    api_key_env: "HF_API_KEY"
+    model: "openai/whisper-large-v3-turbo"
+    language: "auto"
+
 # ─── TTS Providers ───────────────────────────────────────────
 
 tts:
@@ -84,7 +96,7 @@ tts:
   gemini:
     api_key_env: "GEMINI_API_KEY"
     voice_en: "Puck"
-    voice_ar: "Puck"      # Will update once we test Arabic voices
+    voice_ar: "Zephyr"      # Will update once we test Arabic voices
     model: "gemini-3.1-flash-tts-preview"
 
 # ─── Session Settings ────────────────────────────────────────

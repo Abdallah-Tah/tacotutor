@@ -3,12 +3,12 @@ TacoTutor LLM Provider — unified interface for multiple LLM backends.
 Swap providers via config/providers.yaml without changing pipeline code.
 """
 
-import os
 import yaml
-import json
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
+
+from tutor.secrets import get_gemini_api_key, get_hf_api_key, resolve_secret
 
 log = logging.getLogger(__name__)
 
@@ -20,11 +20,8 @@ def load_config():
         return yaml.safe_load(f)
 
 
-def _get_key(env_var: str) -> str:
-    key = os.environ.get(env_var, "")
-    if not key:
-        raise ValueError(f"Missing env var: {env_var}")
-    return key
+def _get_key(config_value: str) -> str:
+    return resolve_secret(config_value)
 
 
 class LLMProvider(ABC):
@@ -114,7 +111,7 @@ class AnthropicProvider(LLMProvider):
 
 class GeminiProvider(LLMProvider):
     def __init__(self, cfg: dict):
-        self.api_key = _get_key(cfg["api_key_env"])
+        self.api_key = get_gemini_api_key()
         self.model = cfg["model"]
         self.temperature = cfg.get("temperature", 0.7)
         self.max_tokens = cfg.get("max_tokens", 512)
@@ -138,6 +135,32 @@ class GeminiProvider(LLMProvider):
             })
         resp.raise_for_status()
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+class HuggingFaceProvider(LLMProvider):
+    def __init__(self, cfg: dict):
+        self.api_key = get_hf_api_key()
+        self.base_url = cfg.get("base_url", "https://router.huggingface.co/v1")
+        self.model = cfg["model"]
+        self.temperature = cfg.get("temperature", 0.7)
+        self.max_tokens = cfg.get("max_tokens", 512)
+
+    async def chat(self, messages: list[dict], **kwargs) -> str:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": kwargs.get("model", self.model),
+                    "messages": messages,
+                    "temperature": kwargs.get("temperature", self.temperature),
+                    "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+                },
+            )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
 
 class OpenRouterProvider(LLMProvider):
@@ -200,6 +223,7 @@ PROVIDERS = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "gemini": GeminiProvider,
+    "huggingface": HuggingFaceProvider,
     "minimax": MiniMaxProvider,
     "glm": GLMProvider,
     "openrouter": OpenRouterProvider,

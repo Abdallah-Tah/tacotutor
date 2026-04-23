@@ -2,6 +2,7 @@
 TacoTutor Backend - Auth endpoints.
 """
 
+import uuid
 from datetime import timedelta
 from typing import Optional
 
@@ -25,7 +26,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     payload = decode_access_token(token)
     if payload is None or payload.sub is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-    user = db.query(User).filter(User.id == payload.sub).first()
+    try:
+        user_id = uuid.UUID(payload.sub)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user

@@ -34,8 +34,14 @@ export default api;
 export const authAPI = {
   signup: (email: string, password: string, displayName?: string) =>
     api.post('/auth/signup', { email, password, display_name: displayName }),
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { username: email, password }),
+  login: (email: string, password: string) => {
+    const body = new URLSearchParams()
+    body.set('username', email)
+    body.set('password', password)
+    return api.post('/auth/login', body, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    })
+  },
   googleAuth: (token: string) =>
     api.post('/auth/google', { token }),
   me: () =>
