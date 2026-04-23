@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Users, BookOpen, TrendingUp, Clock, Plus, ChevronRight, Star } from 'lucide-react'
 import { sessionAPI, userAPI } from '@/services/api'
@@ -7,6 +7,7 @@ import AddChildModal from '@/components/AddChildModal'
 import type { Child, Session, ProgressRecord } from '@/types'
 
 export default function ParentDashboard() {
+  const navigate = useNavigate()
   const [children, setChildren] = useState<Child[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [progress, setProgress] = useState<ProgressRecord[]>([])
@@ -57,6 +58,12 @@ export default function ParentDashboard() {
       >
         <h1 className="text-3xl font-black">Parent Dashboard</h1>
         <p className="text-muted">Overview of your children's learning progress</p>
+        <button
+          onClick={() => navigate('/parent/profile')}
+          className="mt-3 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-sm font-semibold"
+        >
+          ⚙️ My Profile
+        </button>
       </motion.div>
 
       {/* Stats */}

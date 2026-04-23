@@ -26,6 +26,15 @@ def _uuid_or_404(value: str) -> _uuid.UUID:
 router = APIRouter(tags=["users"])
 
 
+@router.patch("/me")
+def update_me(data: dict, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if "display_name" in data and data["display_name"]:
+        user.display_name = data["display_name"]
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 # ─── Children ──────────────────────────────────────────
 
 @router.post("/children", response_model=ChildResponse)
@@ -63,6 +72,24 @@ def get_child(child_id: str, db: Session = Depends(get_db), parent: User = Depen
     child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
     if not child:
         raise HTTPException(status_code=404, detail="Child not found")
+    return child
+
+
+@router.patch("/children/{child_id}", response_model=ChildResponse)
+def update_child(child_id: str, data: dict, db: Session = Depends(get_db), parent: User = Depends(get_current_parent)):
+    child = db.query(Child).filter(Child.id == _uuid_or_404(child_id), Child.parent_id == parent.id).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    if "name" in data and data["name"]:
+        child.name = data["name"]
+    if "age" in data:
+        child.age = data["age"]
+    if "gender" in data:
+        child.gender = data["gender"]
+    if "avatar_color" in data:
+        child.avatar_color = data["avatar_color"]
+    db.commit()
+    db.refresh(child)
     return child
 
 

@@ -49,6 +49,8 @@ export const authAPI = {
 };
 
 export const userAPI = {
+  updateParent: (displayName: string) =>
+    api.patch('/users/me', { display_name: displayName }),
   createChild: (data: { name: string; age?: number; gender?: string; avatar_color?: string }) =>
     api.post('/users/children', data),
   listChildren: () =>

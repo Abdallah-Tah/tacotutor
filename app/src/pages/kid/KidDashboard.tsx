@@ -93,6 +93,12 @@ export default function KidDashboard() {
             assalamu alaikum, {child.name}!
           </h1>
           <p className="text-muted">Ready to learn something amazing today?</p>
+          <button
+            onClick={() => navigate(`/kid/${childId}/profile`)}
+            className="mt-3 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-sm font-semibold"
+          >
+            ⚙️ My Profile
+          </button>
         </motion.div>
 
         {/* Streak & Rewards */}

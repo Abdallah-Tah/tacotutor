@@ -7,7 +7,9 @@ import Login from '@/pages/auth/Login'
 import Signup from '@/pages/auth/Signup'
 import ParentDashboard from '@/pages/parent/ParentDashboard'
 import ChildProfile from '@/pages/parent/ChildProfile'
+import ParentProfile from '@/pages/parent/ParentProfile'
 import KidDashboard from '@/pages/kid/KidDashboard'
+import KidProfile from '@/pages/kid/KidProfile'
 import LessonManagement from '@/pages/lesson/LessonManagement'
 import LessonPlayer from '@/pages/lesson/LessonPlayer'
 import LiveTutorSession from '@/pages/live/LiveTutorSession'
@@ -27,8 +29,10 @@ function App() {
       <Route path="/signup" element={<Signup />} />
       <Route element={<Layout />}>
         <Route path="/parent" element={<ParentDashboard />} />
+        <Route path="/parent/profile" element={<ParentProfile />} />
         <Route path="/parent/child/:childId" element={<ChildProfile />} />
         <Route path="/kid/:childId" element={<KidDashboard />} />
+        <Route path="/kid/:childId/profile" element={<KidProfile />} />
         <Route path="/lessons" element={<LessonManagement />} />
         <Route path="/play/:childId/:lessonId?" element={<LessonPlayer />} />
         <Route path="/live/:childId/:lessonId?" element={<LiveTutorSession />} />
