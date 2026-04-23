@@ -1,14 +1,25 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { BookOpen, Star, Flame, Trophy, Play, ArrowRight, Sparkles } from 'lucide-react'
-import { sessionAPI } from '@/services/api'
-import type { KidDashboardData } from '@/types'
+import { useParams, useNavigate } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
+import { BookOpen, Star, Flame, Trophy, Sparkles, ChevronRight, Mic, Headphones } from 'lucide-react'
+import { sessionAPI, lessonAPI } from '@/services/api'
+import type { KidDashboardData, LessonAssignment } from '@/types'
+
+const SUBJECTS = [
+  { id: 'quran', name: 'القرآن الكريم', nameEn: 'Quran', icon: '🕌', color: 'from-emerald-500 to-teal-600', emoji: '📖' },
+  { id: 'math', name: 'الرياضيات', nameEn: 'Math', icon: '🔢', color: 'from-blue-500 to-indigo-600', emoji: '🧮' },
+  { id: 'english', name: 'اللغة الإنجليزية', nameEn: 'English', icon: '🔤', color: 'from-purple-500 to-pink-600', emoji: '📝' },
+] as const
 
 export default function KidDashboard() {
   const { childId } = useParams()
+  const navigate = useNavigate()
   const [data, setData] = useState<KidDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [step, setStep] = useState<'dashboard' | 'subject' | 'lesson'>('dashboard')
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const [assignments, setAssignments] = useState<LessonAssignment[]>([])
+  const [lessonsLoading, setLessonsLoading] = useState(false)
 
   useEffect(() => {
     if (childId) loadData()
@@ -25,9 +36,33 @@ export default function KidDashboard() {
     }
   }
 
+  const selectSubject = async (subject: string) => {
+    setSelectedSubject(subject)
+    setLessonsLoading(true)
+    setStep('lesson')
+    try {
+      const res = await lessonAPI.getAssignments(childId!, 'in_progress')
+      const all = res.data as LessonAssignment[]
+      // Also get assigned ones without status filter
+      const res2 = await lessonAPI.getAssignments(childId!)
+      const allAssignments = res2.data as LessonAssignment[]
+      // Filter by subject
+      const filtered = allAssignments.filter(a => a.lesson?.subject === subject)
+      setAssignments(filtered.length > 0 ? filtered : allAssignments.filter(a => a.lesson?.subject === subject))
+    } catch {
+      setAssignments([])
+    } finally {
+      setLessonsLoading(false)
+    }
+  }
+
+  const startSession = (lessonId: string) => {
+    navigate(`/live/${childId}/${lessonId}`)
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-dark-bg">
         <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
       </div>
     )
@@ -35,13 +70,13 @@ export default function KidDashboard() {
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-dark-bg">
         <p className="text-muted">Failed to load dashboard.</p>
       </div>
     )
   }
 
-  const { child, current_lesson, streak_days, rewards, progress } = data
+  const { child, streak_days, rewards, progress } = data
   const quranProgress = progress.find(p => p.subject === 'quran')
 
   return (
@@ -51,7 +86,7 @@ export default function KidDashboard() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-10"
+          className="text-center mb-8"
         >
           <div
             className="w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center text-4xl"
@@ -60,135 +95,161 @@ export default function KidDashboard() {
             👶
           </div>
           <h1 className="text-3xl font-black mb-2">
-            Assalamu Alaikum, {child.name}!
+            assalamu alaikum, {child.name}!
           </h1>
           <p className="text-muted">Ready to learn something amazing today?</p>
         </motion.div>
 
         {/* Streak & Rewards */}
         <div className="grid grid-cols-3 gap-4 mb-8">
-          <RewardCard
-            icon={<Flame size={24} />}
-            value={`${streak_days}`}
-            label="Day Streak"
-            color="from-orange-500 to-red-500"
-          />
-          <RewardCard
-            icon={<Star size={24} />}
-            value={`${rewards.length}`}
-            label="Stars"
-            color="from-warning to-yellow-500"
-          />
-          <RewardCard
-            icon={<Trophy size={24} />}
-            value={`${Math.round(quranProgress?.mastery_score || 0)}%`}
-            label="Quran"
-            color="from-primary to-accent"
-          />
+          <RewardCard icon={<Flame size={24} />} value={`${streak_days}`} label="Day Streak" color="from-orange-500 to-red-500" />
+          <RewardCard icon={<Star size={24} />} value={`${rewards.length}`} label="Stars" color="from-warning to-yellow-500" />
+          <RewardCard icon={<Trophy size={24} />} value={`${Math.round(quranProgress?.mastery_score || 0)}%`} label="Quran" color="from-primary to-accent" />
         </div>
 
-        {/* Current Lesson */}
+        {/* Start Session CTA */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
           className="mb-8"
         >
-          {current_lesson ? (
-            <div className="glass-card rounded-3xl p-8 relative overflow-hidden">
-              <div className="absolute top-4 right-4">
-                <div className="px-3 py-1 rounded-full bg-primary/20 text-primary text-sm font-semibold">
-                  {current_lesson.status === 'in_progress' ? 'In Progress' : 'New'}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-2xl">
-                  🕌
-                </div>
-                <div>
-                  <p className="text-sm text-muted uppercase tracking-wider font-semibold">Current Lesson</p>
-                  <h2 className="text-2xl font-black">{current_lesson.lesson?.title}</h2>
-                </div>
-              </div>
-
-              <p className="text-muted mb-6">{current_lesson.lesson?.description}</p>
-
-              <div className="flex gap-3">
-                <Link
-                  to={`/live/${childId}/${current_lesson.lesson_id}`}
-                  className="flex-1 btn-primary flex items-center justify-center gap-2 text-lg py-4"
-                >
-                  <Play size={20} />
-                  Continue Learning
-                </Link>
-              </div>
+          <button
+            onClick={() => setStep('subject')}
+            className="w-full glass-card rounded-3xl p-8 text-center hover:border-primary/50 transition-all cursor-pointer group"
+          >
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-3xl mx-auto mb-4 group-hover:scale-110 transition-transform">
+              🚀
             </div>
-          ) : (
-            <div className="glass-card rounded-3xl p-8 text-center">
-              <Sparkles size={48} className="mx-auto mb-4 text-muted" />
-              <h2 className="text-2xl font-bold mb-2">No Lesson Assigned</h2>
-              <p className="text-muted mb-6">Ask your parent to assign a lesson for you!</p>
+            <h2 className="text-2xl font-black mb-2">Start a Lesson</h2>
+            <p className="text-muted">Pick a subject and start learning with your AI tutor!</p>
+            <div className="mt-4 flex items-center justify-center gap-2 text-primary">
+              <span className="font-semibold">Let's Go</span>
+              <ChevronRight size={20} />
             </div>
-          )}
+          </button>
         </motion.div>
 
-        {/* Progress */}
-        <div className="mb-8">
-          <h2 className="text-xl font-bold mb-4">Your Progress</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
-            {progress.map((p) => (
+        {/* Subject + Lesson Modal Overlay */}
+        <AnimatePresence>
+          {step !== 'dashboard' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+              onClick={() => setStep('dashboard')}
+            >
               <motion.div
-                key={p.id}
-                whileHover={{ scale: 1.02 }}
-                className="glass-card rounded-2xl p-5"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                onClick={e => e.stopPropagation()}
+                className="glass-card rounded-3xl p-8 w-full max-w-lg max-h-[80vh] overflow-y-auto"
               >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="font-bold capitalize">{p.subject}</span>
-                  <span className="text-sm text-muted">Level {p.level}</span>
-                </div>
-                <div className="w-full h-3 bg-dark-input rounded-full overflow-hidden mb-2">
-                  <div
-                    className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
-                    style={{ width: `${p.mastery_score}%` }}
-                  />
-                </div>
-                <p className="text-sm text-muted">{Math.round(p.mastery_score)}% mastery</p>
+                {step === 'subject' && (
+                  <>
+                    <h3 className="text-2xl font-black text-center mb-2">Choose a Subject</h3>
+                    <p className="text-muted text-center mb-6">What do you want to learn today?</p>
+                    <div className="space-y-4">
+                      {SUBJECTS.map(subject => (
+                        <button
+                          key={subject.id}
+                          onClick={() => selectSubject(subject.id)}
+                          className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 hover:border-primary/50 transition-all cursor-pointer group"
+                        >
+                          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${subject.color} flex items-center justify-center text-3xl`}>
+                            {subject.icon}
+                          </div>
+                          <div className="text-left flex-1">
+                            <h4 className="text-xl font-bold">{subject.name}</h4>
+                            <p className="text-sm text-muted">{subject.nameEn}</p>
+                          </div>
+                          <ChevronRight size={24} className="text-muted group-hover:text-primary transition-colors" />
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {step === 'lesson' && (
+                  <>
+                    <div className="flex items-center gap-3 mb-6">
+                      <button onClick={() => setStep('subject')} className="text-muted hover:text-white transition-colors">
+                        ← Back
+                      </button>
+                      <h3 className="text-2xl font-black">
+                        {SUBJECTS.find(s => s.id === selectedSubject)?.emoji}{' '}
+                        {SUBJECTS.find(s => s.id === selectedSubject)?.name}
+                      </h3>
+                    </div>
+
+                    {lessonsLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                      </div>
+                    ) : assignments.length > 0 ? (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted mb-4">Pick a lesson to start:</p>
+                        {assignments.map(a => (
+                          <button
+                            key={a.id}
+                            onClick={() => startSession(a.lesson_id)}
+                            className="w-full glass-card rounded-2xl p-5 flex items-center gap-4 hover:border-primary/50 transition-all cursor-pointer group text-left"
+                          >
+                            <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${SUBJECTS.find(s => s.id === selectedSubject)?.color || 'from-primary to-secondary'} flex items-center justify-center text-xl`}>
+                              {a.lesson?.lesson_type === 'surah' ? '📖' : a.lesson?.lesson_type === 'letter' ? '✍️' : '📚'}
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-bold text-lg">{a.lesson?.title}</h4>
+                              {a.lesson?.description && (
+                                <p className="text-sm text-muted line-clamp-2">{a.lesson.description}</p>
+                              )}
+                              {a.status === 'in_progress' && (
+                                <span className="text-xs text-primary font-semibold mt-1 inline-block">In Progress</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Headphones size={18} className="text-primary" />
+                              <ChevronRight size={20} className="text-muted group-hover:text-primary" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <Sparkles size={48} className="mx-auto mb-4 text-muted" />
+                        <h4 className="text-xl font-bold mb-2">No Lessons Yet</h4>
+                        <p className="text-muted">Ask your parent to assign a {SUBJECTS.find(s => s.id === selectedSubject)?.nameEn} lesson!</p>
+                      </div>
+                    )}
+                  </>
+                )}
               </motion.div>
-            ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Progress */}
+        {progress.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-bold mb-4">Your Progress</h2>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {progress.map(p => (
+                <motion.div key={p.id} whileHover={{ scale: 1.02 }} className="glass-card rounded-2xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="font-bold capitalize">{p.subject}</span>
+                    <span className="text-sm text-muted">Level {p.level}</span>
+                  </div>
+                  <div className="w-full h-3 bg-dark-input rounded-full overflow-hidden mb-2">
+                    <div className="h-full bg-gradient-to-r from-primary to-accent rounded-full" style={{ width: `${p.mastery_score}%` }} />
+                  </div>
+                  <p className="text-sm text-muted">{Math.round(p.mastery_score)}% mastery</p>
+                </motion.div>
+              ))}
+            </div>
           </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Link
-            to={`/live/${childId}`}
-            className="glass-card rounded-2xl p-6 flex items-center gap-4 hover:border-primary/50 transition-colors"
-          >
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white">
-              <Play size={24} />
-            </div>
-            <div>
-              <h3 className="font-bold">Live Tutor</h3>
-              <p className="text-sm text-muted">Practice with the AI tutor</p>
-            </div>
-            <ArrowRight size={20} className="ml-auto text-muted" />
-          </Link>
-
-          <Link
-            to={`/play/${childId}`}
-            className="glass-card rounded-2xl p-6 flex items-center gap-4 hover:border-primary/50 transition-colors"
-          >
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-emerald-500 flex items-center justify-center text-white">
-              <BookOpen size={24} />
-            </div>
-            <div>
-              <h3 className="font-bold">Practice</h3>
-              <p className="text-sm text-muted">Review and practice</p>
-            </div>
-            <ArrowRight size={20} className="ml-auto text-muted" />
-          </Link>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -196,10 +257,7 @@ export default function KidDashboard() {
 
 function RewardCard({ icon, value, label, color }: { icon: React.ReactNode; value: string; label: string; color: string }) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.05 }}
-      className="glass-card rounded-2xl p-4 text-center"
-    >
+    <motion.div whileHover={{ scale: 1.05 }} className="glass-card rounded-2xl p-4 text-center">
       <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center text-white mx-auto mb-2`}>
         {icon}
       </div>
