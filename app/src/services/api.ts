@@ -76,6 +76,8 @@ export const lessonAPI = {
     api.get(`/lessons/child/${childId}/assignments`, { params: { status } }),
   updateAssignment: (assignmentId: string, status: string) =>
     api.patch(`/lessons/assignments/${assignmentId}`, { status }),
+  unassign: (assignmentId: string) =>
+    api.delete(`/lessons/assignments/${assignmentId}`),
 };
 
 export const sessionAPI = {

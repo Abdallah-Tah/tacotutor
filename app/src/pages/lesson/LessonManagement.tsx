@@ -74,11 +74,27 @@ export default function LessonManagement() {
   const isAssigned = (lessonId: string) =>
     assignments.some(a => a.lesson_id === lessonId)
 
+  const getAssignment = (lessonId: string) =>
+    assignments.find(a => a.lesson_id === lessonId)
+
   const handleAssign = async (lesson: Lesson) => {
     if (!selectedChild) {
       alert('Please select a child first')
       return
     }
+
+    const existing = getAssignment(lesson.id)
+    if (existing) {
+      // Unassign
+      try {
+        await lessonAPI.unassign(existing.id)
+        await loadAssignments()
+      } catch (err: any) {
+        alert(err.response?.data?.detail || 'Failed to unassign')
+      }
+      return
+    }
+
     setLessonToAssign(lesson)
     setShowAssignModal(true)
   }
@@ -227,14 +243,13 @@ export default function LessonManagement() {
               </div>
               <button
                 onClick={() => handleAssign(lesson)}
-                disabled={isAssigned(lesson.id)}
                 className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all ${
                   isAssigned(lesson.id)
-                    ? 'bg-dark-input text-muted cursor-not-allowed'
+                    ? 'bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20'
                     : 'btn-primary'
                 }`}
               >
-                {isAssigned(lesson.id) ? 'Assigned' : 'Assign'}
+                {isAssigned(lesson.id) ? 'Unassign' : 'Assign'}
               </button>
             </div>
           </motion.div>

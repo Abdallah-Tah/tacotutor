@@ -104,6 +104,25 @@ def get_child_assignments(
     return query.order_by(LessonAssignment.assigned_at.desc()).all()
 
 
+@router.delete("/assignments/{assignment_id}")
+def unassign_lesson(
+    assignment_id: str,
+    db: Session = Depends(get_db),
+    parent: User = Depends(get_current_parent)
+):
+    import uuid
+    try:
+        aid = uuid.UUID(assignment_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid assignment ID")
+    assignment = db.query(LessonAssignment).filter(LessonAssignment.id == aid).first()
+    if not assignment or assignment.child.parent_id != parent.id:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    db.delete(assignment)
+    db.commit()
+    return {"detail": "Unassigned"}
+
+
 @router.patch("/assignments/{assignment_id}", response_model=LessonAssignmentResponse)
 def update_assignment(
     assignment_id: str,
