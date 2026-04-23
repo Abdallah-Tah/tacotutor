@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { BookOpen, Star, Flame, Trophy, Sparkles, ChevronRight, Mic, Headphones } from 'lucide-react'
-import { sessionAPI, lessonAPI } from '@/services/api'
+import { sessionAPI } from '@/services/api'
+import api from '@/services/api'
 import type { KidDashboardData, LessonAssignment } from '@/types'
 
 const SUBJECTS = [
@@ -41,14 +42,8 @@ export default function KidDashboard() {
     setLessonsLoading(true)
     setStep('lesson')
     try {
-      const res = await lessonAPI.getAssignments(childId!, 'in_progress')
-      const all = res.data as LessonAssignment[]
-      // Also get assigned ones without status filter
-      const res2 = await lessonAPI.getAssignments(childId!)
-      const allAssignments = res2.data as LessonAssignment[]
-      // Filter by subject
-      const filtered = allAssignments.filter(a => a.lesson?.subject === subject)
-      setAssignments(filtered.length > 0 ? filtered : allAssignments.filter(a => a.lesson?.subject === subject))
+      const res = await api.get(`/lessons/kid/${childId}/assignments`, { params: { subject } })
+      setAssignments(res.data as LessonAssignment[])
     } catch {
       setAssignments([])
     } finally {

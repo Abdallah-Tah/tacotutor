@@ -93,11 +93,26 @@ def assign_lesson(
     if existing:
         raise HTTPException(status_code=400, detail="Lesson already assigned to this child")
 
-    assignment = LessonAssignment(child_id=child_uuid, lesson_id=lesson_uuid)
-    db.add(assignment)
-    db.commit()
     db.refresh(assignment)
     return assignment
+
+
+@router.get("/kid/{child_id}/assignments", response_model=List[LessonAssignmentResponse])
+def get_kid_assignments(
+    child_id: str,
+    subject: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Public endpoint for kid dashboard — no auth required (UUID is the access token)."""
+    cid = _uuid.UUID(child_id)
+    child = db.query(Child).filter(Child.id == cid).first()
+    if not child:
+        raise HTTPException(status_code=404, detail="Child not found")
+    query = db.query(LessonAssignment).filter(LessonAssignment.child_id == cid)
+    if subject:
+        query = query.join(Lesson).filter(Lesson.subject == subject)
+    return query.order_by(LessonAssignment.assigned_at.desc()).all()
+
 
 
 @router.get("/child/{child_id}/assignments", response_model=List[LessonAssignmentResponse])
