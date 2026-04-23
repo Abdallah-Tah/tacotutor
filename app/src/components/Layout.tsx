@@ -1,11 +1,13 @@
 import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Home, BookOpen, Settings, Users, LogOut, Menu, X,
-  User, Baby, GraduationCap, MessageSquare, ChevronDown
+  User, Baby, GraduationCap, MessageSquare, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/authStore'
+import api from '@/services/api'
+import type { Child } from '@/types'
 
 const NAV_ITEMS = [
   { path: '/parent', icon: Home, label: 'Dashboard', group: 'parent' },
@@ -19,6 +21,14 @@ export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [childrenOpen, setChildrenOpen] = useState(false)
+  const [children, setChildren] = useState<Child[]>([])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      api.get('/users/children').then(res => setChildren(res.data)).catch(() => {})
+    }
+  }, [isAuthenticated])
 
   // Detect if we're on a kid page
   const isKidPage = location.pathname.startsWith('/kid/')
@@ -81,6 +91,49 @@ export default function Layout() {
             {item.label}
           </button>
         ))}
+
+        {/* Children section */}
+        {children.length > 0 && (
+          <div className="pt-2">
+            <button
+              onClick={() => setChildrenOpen(!childrenOpen)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-muted hover:text-text hover:bg-white/5 transition-all"
+            >
+              <Baby size={18} />
+              <span className="flex-1 text-left">Children</span>
+              <ChevronDown size={16} className={`transition-transform ${childrenOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <AnimatePresence>
+              {childrenOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  {children.map(child => (
+                    <button
+                      key={child.id}
+                      onClick={() => { navigate(`/parent/child/${child.id}`); setSidebarOpen(false) }}
+                      className={`w-full flex items-center gap-3 pl-11 pr-4 py-2.5 rounded-xl text-sm transition-all ${
+                        isActive(`/parent/child/${child.id}`)
+                          ? 'text-primary bg-primary/10'
+                          : 'text-muted hover:text-text hover:bg-white/5'
+                      }`
+                    }
+                    >
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center text-xs" style={{ backgroundColor: child.avatar_color }}>
+                        {child.gender === 'male' ? '👦' : child.gender === 'female' ? '👧' : '👶'}
+                      </div>
+                      <span className="truncate">{child.name}</span>
+                      <ChevronRight size={14} className="ml-auto opacity-50" />
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </nav>
 
       {/* User section */}
