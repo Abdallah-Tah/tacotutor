@@ -243,12 +243,13 @@ export default function LessonManagement() {
               </div>
               <button
                 onClick={() => handleAssign(lesson)}
-                className={`text-sm px-4 py-2 rounded-xl font-semibold transition-all ${
+                onTouchEnd={(e) => { e.preventDefault(); handleAssign(lesson) }}
+                className={`text-sm px-5 py-3 rounded-xl font-semibold transition-all active:scale-95 ${
                   isAssigned(lesson.id)
                     ? 'bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20'
                     : 'btn-primary'
-                }`}
-              >
+                }`
+              }>
                 {isAssigned(lesson.id) ? 'Unassign' : 'Assign'}
               </button>
             </div>
