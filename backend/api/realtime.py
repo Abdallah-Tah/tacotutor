@@ -567,21 +567,22 @@ async def realtime_ws(websocket: WebSocket):
                     ):
                         import asyncio as _aio
                         _ploop = _aio.get_running_loop()
-                        result = grade_puzzle(current_puzzle, transcription)
-                        encouragement = result.get("encouragement", "")
-                        is_arabic = result.get("is_arabic", active_subject == "quran")
+                        grade_result = grade_puzzle(current_puzzle, transcription)
+                        encouragement = grade_result.get("encouragement", "")
+                        is_arabic = grade_result.get("is_arabic", active_subject == "quran")
                         audio_file = await _ploop.run_in_executor(None, _generate_tts, encouragement, is_arabic)
                         puzzle_result_msg: dict = {
                             "type": "puzzle_result",
                             "puzzle_id": current_puzzle.get("id"),
-                            "is_correct": result["is_correct"],
-                            "accuracy": result.get("accuracy", 0),
+                            "is_correct": grade_result["is_correct"],
+                            "accuracy": grade_result.get("accuracy", 0),
                             "encouragement": encouragement,
-                            "details": result.get("details", {}),
+                            "details": grade_result.get("details", {}),
                         }
                         if audio_file:
                             puzzle_result_msg["audio"] = f"/api/realtime/audio/{audio_file}"
                         await websocket.send_json(puzzle_result_msg)
+                        await websocket.send_json({"type": "turn_complete"})
                         continue
 
                     # ── Regular recitation feedback ────────────────────────────
@@ -630,6 +631,10 @@ async def realtime_ws(websocket: WebSocket):
 
             elif msg_type == "puzzle_toggle":
                 puzzle_mode = msg.get("enabled", not puzzle_mode)
+                if not puzzle_mode:
+                    # Clear stale puzzle state when turning off
+                    current_puzzle = None
+                    puzzle_hint_num = 0
                 await websocket.send_json({"type": "puzzle_mode_changed", "enabled": puzzle_mode})
                 if puzzle_mode:
                     await send_next_puzzle()
@@ -639,7 +644,9 @@ async def realtime_ws(websocket: WebSocket):
                     await send_next_puzzle()
 
             elif msg_type == "puzzle_hint":
-                if current_puzzle:
+                if not current_puzzle:
+                    await websocket.send_json({"type": "puzzle_hint", "hint": "", "hint_num": 0, "error": "no_active_puzzle"})
+                else:
                     puzzle_hint_num += 1
                     hint_text = get_puzzle_hint(current_puzzle, puzzle_hint_num)
                     is_arabic = active_subject == "quran"

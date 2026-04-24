@@ -357,6 +357,7 @@ export default function LiveTutorSession() {
         break
       case 'puzzle_result':
         setPuzzleResult(msg as PuzzleResult)
+        setProcessing(false)
         if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
         break
       case 'puzzle_hint':

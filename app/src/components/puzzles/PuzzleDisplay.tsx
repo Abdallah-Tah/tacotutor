@@ -147,14 +147,16 @@ function WordOrderContent({ puzzle }: { puzzle: Puzzle }) {
 }
 
 function CountContent({ puzzle }: { puzzle: Puzzle }) {
-  const count = puzzle.display_count ?? 0
+  const count = Math.max(0, puzzle.display_count ?? 0)
+  const columnCount = Math.max(1, Math.min(count, 5))
   const emoji = puzzle.display_emoji ?? '⭐'
   const items = Array.from({ length: count })
+  if (count === 0) return <p className="text-muted italic text-sm">No objects to count.</p>
   return (
     <div className="flex flex-col items-center gap-6">
       <motion.div
         className="grid gap-3 justify-items-center"
-        style={{ gridTemplateColumns: `repeat(${Math.min(count, 5)}, 1fr)` }}
+        style={{ gridTemplateColumns: `repeat(${columnCount}, 1fr)` }}
         variants={gridVariants}
         initial="hidden"
         animate="show"
@@ -179,34 +181,47 @@ function AddContent({ puzzle }: { puzzle: Puzzle }) {
   const a = puzzle.operand_a ?? 0
   const b = puzzle.operand_b ?? 0
   const emoji = puzzle.display_emoji ?? '⭐'
+  // Build a single flat sequence so Framer Motion staggers A then B in order
+  const allItems: { group: 'a' | 'b'; idx: number }[] = [
+    ...Array.from({ length: a }, (_, i) => ({ group: 'a' as const, idx: i })),
+    ...Array.from({ length: b }, (_, i) => ({ group: 'b' as const, idx: i })),
+  ]
   return (
     <div className="flex flex-col items-center gap-6">
       <div className="flex items-center gap-4 flex-wrap justify-center">
-        {/* Group A */}
-        <motion.div className="flex flex-wrap gap-2 max-w-[160px] justify-center" variants={gridVariants} initial="hidden" animate="show">
-          {Array.from({ length: a }).map((_, i) => (
-            <motion.span key={i} variants={itemVariants} className="text-3xl">{emoji}</motion.span>
+        {/* Group A + B as a single staggered parent */}
+        <motion.div
+          className="flex flex-wrap gap-2 max-w-[160px] justify-center"
+          variants={gridVariants} initial="hidden" animate="show"
+        >
+          {allItems.filter(it => it.group === 'a').map(({ idx }) => (
+            <motion.span key={`a-${idx}`} variants={itemVariants} className="text-3xl">{emoji}</motion.span>
           ))}
         </motion.div>
         {/* Plus sign */}
         <motion.div
           className="text-4xl font-bold text-success"
           initial={{ scale: 0 }} animate={{ scale: 1 }}
-          transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
+          transition={{ delay: a * 0.10 + 0.1, type: 'spring', stiffness: 200 }}
         >
           +
         </motion.div>
-        {/* Group B */}
-        <motion.div className="flex flex-wrap gap-2 max-w-[160px] justify-center" variants={gridVariants} initial="hidden" animate="show">
-          {Array.from({ length: b }).map((_, i) => (
-            <motion.span key={i} variants={itemVariants} style={{ transitionDelay: `${(a + i) * 0.10}s` }} className="text-3xl">{emoji}</motion.span>
+        <motion.div
+          className="flex flex-wrap gap-2 max-w-[160px] justify-center"
+          variants={gridVariants}
+          initial="hidden"
+          animate="show"
+          transition={{ delayChildren: a * 0.10 + 0.25, staggerChildren: 0.10 }}
+        >
+          {allItems.filter(it => it.group === 'b').map(({ idx }) => (
+            <motion.span key={`b-${idx}`} variants={itemVariants} className="text-3xl">{emoji}</motion.span>
           ))}
         </motion.div>
         {/* Equals + blank */}
         <motion.div
           className="text-4xl font-bold text-muted"
           initial={{ scale: 0 }} animate={{ scale: 1 }}
-          transition={{ delay: 0.5 }}
+          transition={{ delay: (a + b) * 0.10 + 0.35 }}
         >
           =
         </motion.div>

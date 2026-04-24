@@ -21,6 +21,11 @@ OBJECT_EMOJI: dict[str, str] = {
     "moon": "🌙", "sun": "☀️", "tree": "🌳", "heart": "❤️",
 }
 
+# Irregular English plurals used in math prompts
+_PLURAL_MAP: dict[str, str] = {
+    "fish": "fish", "sheep": "sheep", "deer": "deer",
+}
+
 _QURAN_PRAISE = [
     "أحسنت! ممتاز!",
     "ما شاء الله! رائع!",
@@ -49,14 +54,13 @@ _MATH_RETRY = [
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def _pid() -> str:
-    return str(uuid.uuid4())[:8]
+    return str(uuid.uuid4())
 
 
 def _norm(s: str) -> str:
-    """Strip Arabic diacritics and collapse whitespace."""
+    """Strip Arabic diacritics (tashkeel) only — preserves base letters."""
     s = re.sub(
-        r"[ؐ-ًؚ-ٰٟ"
-        r"ۖ-ۜ۟-۪ۤۧۨ-ۭ]",
+        r"[ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭ]",
         "", s,
     )
     return re.sub(r"\s+", " ", s).strip()
@@ -64,6 +68,23 @@ def _norm(s: str) -> str:
 
 def _fuzzy(a: str, b: str, threshold: float = 0.72) -> bool:
     return difflib.SequenceMatcher(None, a, b).ratio() >= threshold
+
+
+def _pluralize(word: str) -> str:
+    return _PLURAL_MAP.get(word, word + "s")
+
+
+def _lcs_length(a: list[str], b: list[str]) -> int:
+    """Longest common subsequence length with fuzzy word matching."""
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1] or _fuzzy(a[i - 1], b[j - 1]):
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[m][n]
 
 
 # ─── Public generators ───────────────────────────────────────────────────────
@@ -144,11 +165,12 @@ def generate_math_puzzle(
         a, b = random.randint(1, half), random.randint(1, half)
         obj = random.choice(obj_list)
         emoji = OBJECT_EMOJI[obj]
+        obj_pl = _pluralize(obj)
         return {
             "id": _pid(),
             "type": "add",
             "subject": "math",
-            "prompt_en": f"You have {a} {obj}s, then you get {b} more. How many in total?",
+            "prompt_en": f"You have {a} {obj_pl}, then you get {b} more. How many in total?",
             "operand_a": a,
             "operand_b": b,
             "operation": "add",
@@ -169,11 +191,12 @@ def generate_math_puzzle(
         b = random.randint(1, a - 1)
         obj = random.choice(obj_list)
         emoji = OBJECT_EMOJI[obj]
+        obj_pl = _pluralize(obj)
         return {
             "id": _pid(),
             "type": "subtract",
             "subject": "math",
-            "prompt_en": f"You have {a} {obj}s. {b} fly away! How many are left?",
+            "prompt_en": f"You have {a} {obj_pl}. {b} fly away! How many are left?",
             "operand_a": a,
             "operand_b": b,
             "operation": "subtract",
@@ -193,11 +216,12 @@ def generate_math_puzzle(
     count = random.randint(1, max_n)
     obj = random.choice(obj_list)
     emoji = OBJECT_EMOJI[obj]
+    obj_pl = _pluralize(obj)
     return {
         "id": _pid(),
         "type": "count",
         "subject": "math",
-        "prompt_en": f"Count the {obj}s and say the number out loud!",
+        "prompt_en": f"Count the {obj_pl} and say the number out loud!",
         "display_count": count,
         "display_object": obj,
         "display_emoji": emoji,
@@ -205,7 +229,7 @@ def generate_math_puzzle(
         "expected_number": count,
         "hints": [
             "Point to each one as you count: 1, 2, 3...",
-            f"There are {count} {obj}s!",
+            f"There are {count} {obj_pl}!",
         ],
         "animation": "count",
     }
@@ -228,7 +252,6 @@ def next_puzzle_type(subject: str, level: int, last_type: Optional[str] = None) 
     else:
         return "recitation"
 
-    # Avoid same type twice in a row
     choices = [t for t in pool if t != last_type] or pool
     return random.choice(choices)
 
@@ -247,11 +270,12 @@ def grade_puzzle(puzzle: dict, transcript: str) -> dict:
 
 
 def get_puzzle_hint(puzzle: dict, hint_num: int = 1) -> str:
-    """Return the nth progressive hint (1-indexed)."""
+    """Return the nth progressive hint (1-indexed). Clamped to valid range."""
     hints = puzzle.get("hints", [])
     if not hints:
         return ""
-    return hints[min(hint_num - 1, len(hints) - 1)]
+    idx = max(0, min(hint_num - 1, len(hints) - 1))
+    return hints[idx]
 
 
 # ─── Private graders ─────────────────────────────────────────────────────────
@@ -262,7 +286,8 @@ def _grade_quran(puzzle: dict, transcript: str) -> dict:
     exp_n    = _norm(expected)
     rec_n    = _norm(transcript)
 
-    if ptype in ("recitation", "word_order"):
+    if ptype == "recitation":
+        # Bag-of-words: each expected word must appear somewhere in transcript
         exp_words = exp_n.split()
         rec_words = rec_n.split()
         correct   = sum(
@@ -277,6 +302,23 @@ def _grade_quran(puzzle: dict, transcript: str) -> dict:
                 "expected": expected,
                 "recognized": transcript,
                 "correct_words": correct,
+                "total_words": len(exp_words),
+            },
+        }
+
+    if ptype == "word_order":
+        # Order-sensitive: use LCS so words in wrong sequence score lower
+        exp_words = exp_n.split()
+        rec_words = rec_n.split()
+        in_order  = _lcs_length(exp_words, rec_words)
+        accuracy  = round(in_order / len(exp_words) * 100) if exp_words else 0
+        return {
+            "is_correct": accuracy >= 70,
+            "accuracy": accuracy,
+            "details": {
+                "expected": expected,
+                "recognized": transcript,
+                "correct_words": in_order,
                 "total_words": len(exp_words),
             },
         }
@@ -311,13 +353,19 @@ _WORD_NUMS: dict[str, int] = {
     "nineteen": 19, "twenty": 20,
 }
 
+# Pre-sorted longest-first so "fourteen" is checked before "four", etc.
+_WORD_NUMS_SORTED = sorted(_WORD_NUMS.items(), key=lambda kv: -len(kv[0]))
+
 
 def _extract_number(text: str) -> Optional[int]:
+    """Extract the first number from transcript (digit or English word)."""
     t = text.lower().strip()
     m = re.search(r"\b(\d+)\b", t)
     if m:
         return int(m.group(1))
-    for word, num in _WORD_NUMS.items():
-        if word in t:
+    # Use whole-word boundaries; check longest words first to avoid
+    # "four" matching inside "fourteen".
+    for word, num in _WORD_NUMS_SORTED:
+        if re.search(rf"\b{re.escape(word)}\b", t):
             return num
     return None
