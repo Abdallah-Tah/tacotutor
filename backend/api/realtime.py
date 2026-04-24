@@ -336,7 +336,7 @@ async def realtime_ws(websocket: WebSocket):
         current_puzzle = puzzle
 
         # Speak the prompt via TTS
-        prompt_text = puzzle.get("prompt_ar") if active_subject == "quran" else puzzle.get("prompt_en", "")
+        prompt_text = puzzle.get("prompt_ar", "") if active_subject == "quran" else puzzle.get("prompt_en", "")
         import asyncio as _aio
         loop = _aio.get_running_loop()
         audio_file = await loop.run_in_executor(None, _generate_tts, prompt_text, active_subject == "quran")

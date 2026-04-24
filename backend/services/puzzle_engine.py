@@ -26,6 +26,11 @@ _PLURAL_MAP: dict[str, str] = {
     "fish": "fish", "sheep": "sheep", "deer": "deer",
 }
 
+_SUBTRACT_VERB: dict[str, str] = {
+    "duck": "fly away", "fish": "swim away", "cat": "run away",
+    "dog": "run away", "ball": "roll away", "flower": "wilt",
+}
+
 _QURAN_PRAISE = [
     "أحسنت! ممتاز!",
     "ما شاء الله! رائع!",
@@ -60,7 +65,7 @@ def _pid() -> str:
 def _norm(s: str) -> str:
     """Strip Arabic diacritics (tashkeel) only — preserves base letters."""
     s = re.sub(
-        r"[ؐ-ًؚ-ٰٟۖ-ۜ۟-۪ۤۧۨ-ۭ]",
+        r"[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED]",
         "", s,
     )
     return re.sub(r"\s+", " ", s).strip()
@@ -72,6 +77,10 @@ def _fuzzy(a: str, b: str, threshold: float = 0.72) -> bool:
 
 def _pluralize(word: str) -> str:
     return _PLURAL_MAP.get(word, word + "s")
+
+
+def _noun_form(word: str, count: int) -> str:
+    return word if count == 1 else _pluralize(word)
 
 
 def _lcs_length(a: list[str], b: list[str]) -> int:
@@ -165,12 +174,11 @@ def generate_math_puzzle(
         a, b = random.randint(1, half), random.randint(1, half)
         obj = random.choice(obj_list)
         emoji = OBJECT_EMOJI[obj]
-        obj_pl = _pluralize(obj)
         return {
             "id": _pid(),
             "type": "add",
             "subject": "math",
-            "prompt_en": f"You have {a} {obj_pl}, then you get {b} more. How many in total?",
+            "prompt_en": f"You have {a} {_noun_form(obj, a)}, then you get {b} more. How many in total?",
             "operand_a": a,
             "operand_b": b,
             "operation": "add",
@@ -191,12 +199,12 @@ def generate_math_puzzle(
         b = random.randint(1, a - 1)
         obj = random.choice(obj_list)
         emoji = OBJECT_EMOJI[obj]
-        obj_pl = _pluralize(obj)
+        verb = _SUBTRACT_VERB.get(obj, "go away")
         return {
             "id": _pid(),
             "type": "subtract",
             "subject": "math",
-            "prompt_en": f"You have {a} {obj_pl}. {b} fly away! How many are left?",
+            "prompt_en": f"You have {a} {_noun_form(obj, a)}, but {b} {verb}. How many are left?",
             "operand_a": a,
             "operand_b": b,
             "operation": "subtract",
@@ -216,12 +224,11 @@ def generate_math_puzzle(
     count = random.randint(1, max_n)
     obj = random.choice(obj_list)
     emoji = OBJECT_EMOJI[obj]
-    obj_pl = _pluralize(obj)
     return {
         "id": _pid(),
         "type": "count",
         "subject": "math",
-        "prompt_en": f"Count the {obj_pl} and say the number out loud!",
+        "prompt_en": f"Count the {_noun_form(obj, count)} and say the number out loud!",
         "display_count": count,
         "display_object": obj,
         "display_emoji": emoji,
@@ -229,7 +236,7 @@ def generate_math_puzzle(
         "expected_number": count,
         "hints": [
             "Point to each one as you count: 1, 2, 3...",
-            f"There are {count} {obj_pl}!",
+            f"There is {count} {_noun_form(obj, count)}!" if count == 1 else f"There are {count} {_noun_form(obj, count)}!",
         ],
         "animation": "count",
     }

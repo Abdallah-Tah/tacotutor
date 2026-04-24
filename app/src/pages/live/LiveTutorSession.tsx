@@ -361,6 +361,7 @@ export default function LiveTutorSession() {
         if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
         break
       case 'puzzle_hint':
+        if (msg.error) break
         setPuzzleHint(msg.hint)
         setPuzzleHintNum(msg.hint_num)
         if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
