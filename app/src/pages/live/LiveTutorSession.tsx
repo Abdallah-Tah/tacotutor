@@ -221,8 +221,6 @@ export default function LiveTutorSession() {
     ? `Surah ${lesson.content.surah}`
     : lesson?.title || 'الدرس الحالي'
 
-  const isQuranSession = true
-
   const isQuranSession = lesson?.subject === 'quran'
   const isMathSession = lesson?.subject === 'math'
 
