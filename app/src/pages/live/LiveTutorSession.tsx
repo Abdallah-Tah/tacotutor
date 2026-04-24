@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Mic, MicOff, Volume2, VolumeX, Square } from 'lucide-react'
+import { ArrowLeft, Mic, MicOff, Volume2, VolumeX, Square, Puzzle, ChevronRight } from 'lucide-react'
 import { lessonAPI, sessionAPI, userAPI } from '@/services/api'
 import { buildWebSocketUrl } from '@/lib/paths'
 import { useSessionStore } from '@/stores/sessionStore'
+import PuzzleDisplay from '@/components/puzzles/PuzzleDisplay'
+import type { Puzzle as PuzzleData, PuzzleResult } from '@/components/puzzles/PuzzleDisplay'
 import type { Lesson } from '@/types'
 
 export default function LiveTutorSession() {
@@ -337,6 +339,31 @@ export default function LiveTutorSession() {
           setWordCorrectness(Object.values(correctness))
         }
         break
+      case 'puzzle_mode_changed':
+        setPuzzleMode(msg.enabled)
+        if (!msg.enabled) {
+          setCurrentPuzzle(null)
+          setPuzzleResult(null)
+          setPuzzleHint(null)
+          setPuzzleHintNum(0)
+        }
+        break
+      case 'puzzle_start':
+        setCurrentPuzzle(msg.puzzle as PuzzleData)
+        setPuzzleResult(null)
+        setPuzzleHint(null)
+        setPuzzleHintNum(0)
+        if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
+        break
+      case 'puzzle_result':
+        setPuzzleResult(msg as PuzzleResult)
+        if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
+        break
+      case 'puzzle_hint':
+        setPuzzleHint(msg.hint)
+        setPuzzleHintNum(msg.hint_num)
+        if (msg.audio && voiceEnabled) playServerAudio(msg.audio)
+        break
       case 'turn_complete':
         setSpeaking(false)
         setProcessing(false)
@@ -351,6 +378,13 @@ export default function LiveTutorSession() {
   const audioChunksRef = useRef<Blob[]>([])
   const [processing, setProcessing] = useState(false)
   const [recitationAccuracy, setRecitationAccuracy] = useState(0)
+
+  // Puzzle mode state
+  const [puzzleMode, setPuzzleMode] = useState(false)
+  const [currentPuzzle, setCurrentPuzzle] = useState<PuzzleData | null>(null)
+  const [puzzleResult, setPuzzleResult] = useState<PuzzleResult | null>(null)
+  const [puzzleHint, setPuzzleHint] = useState<string | null>(null)
+  const [puzzleHintNum, setPuzzleHintNum] = useState(0)
 
   const toggleListening = () => {
     if (!wsRef.current || !connected) return
@@ -389,7 +423,12 @@ export default function LiveTutorSession() {
               const base64 = (reader.result as string).split(',')[1]
               if (base64 && wsRef.current) {
                 wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
-                wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
+                // Include puzzle_id so the server grades it as a puzzle answer
+                const audioEndMsg: Record<string, string> = { type: 'audio_end' }
+                if (puzzleMode && currentPuzzle) {
+                  audioEndMsg.puzzle_id = currentPuzzle.id
+                }
+                wsRef.current.send(JSON.stringify(audioEndMsg))
                 setProcessing(true)
               }
             }
@@ -421,6 +460,25 @@ export default function LiveTutorSession() {
     setConnected(false)
   }
 
+  const togglePuzzleMode = () => {
+    if (!wsRef.current || !connected) return
+    const nextEnabled = !puzzleMode
+    wsRef.current.send(JSON.stringify({ type: 'puzzle_toggle', enabled: nextEnabled }))
+  }
+
+  const requestNextPuzzle = () => {
+    if (!wsRef.current || !connected) return
+    setPuzzleResult(null)
+    setPuzzleHint(null)
+    setPuzzleHintNum(0)
+    wsRef.current.send(JSON.stringify({ type: 'puzzle_next' }))
+  }
+
+  const requestHint = () => {
+    if (!wsRef.current || !connected || !currentPuzzle) return
+    wsRef.current.send(JSON.stringify({ type: 'puzzle_hint' }))
+  }
+
   return (
     <div className="min-h-screen bg-dark-bg flex flex-col">
       {/* Header */}
@@ -438,6 +496,20 @@ export default function LiveTutorSession() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {sessionStarted && (
+            <button
+              onClick={togglePuzzleMode}
+              title={puzzleMode ? 'Exit puzzle mode' : 'Start puzzle mode'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold transition-all ${
+                puzzleMode
+                  ? 'bg-primary text-white shadow-lg shadow-primary/30'
+                  : 'bg-dark-input hover:bg-dark-card-hover text-muted'
+              }`}
+            >
+              <Puzzle size={15} />
+              {puzzleMode ? 'Puzzles ON' : 'Puzzles'}
+            </button>
+          )}
           <button
             onClick={() => {
               const next = !voiceEnabled
@@ -546,110 +618,181 @@ export default function LiveTutorSession() {
             </motion.div>
           ) : (
             <div className="w-full max-w-3xl">
-              <div className="glass-card rounded-3xl p-8 sm:p-12 text-center">
-                {error && <p className="text-sm text-secondary mb-4">{error}</p>}
-                <p className="text-sm text-muted uppercase tracking-widest mb-2">{lessonTitle}</p>
-                {lessonChunks.length > 1 && (
-                  <p className="text-xs text-muted mb-6">Ayah {currentAyahIndex + 1} of {lessonChunks.length}</p>
-                )}
-
-                <div className={`${isQuranSession ? 'arabic' : ''} text-4xl sm:text-5xl lg:text-6xl leading-loose`}>
-                  {words.map((word: string, i: number) => (
-                    <motion.span
-                      key={i}
-                      className={`inline-block mx-2 px-3 py-2 rounded-xl transition-all duration-300 ${
-                        highlightedWordIndex === i
-                          ? 'bg-primary/30 text-primary-light scale-110'
-                          : wordCorrectness[i] === true
-                          ? 'text-success'
-                          : wordCorrectness[i] === false
-                          ? 'text-secondary'
-                          : ''
-                      }`}
-                      animate={
-                        highlightedWordIndex === i
-                          ? { scale: [1, 1.1, 1], y: [0, -4, 0] }
-                          : {}
-                      }
-                      transition={{ duration: 0.5 }}
-                    >
-                      {word}
-                    </motion.span>
-                  ))}
-                </div>
-
-                {isMathSession && countingItems.length > 0 && (
-                  <div className="mt-8">
-                    <p className="text-sm text-muted mb-4">Count the objects one by one:</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 justify-items-center">
-                      {countingItems.map((item, index) => (
-                        <motion.div
-                          key={item.id}
-                          initial={{ opacity: 0, scale: 0.6, y: 12 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          transition={{ delay: index * 0.08, duration: 0.3 }}
-                          className="w-16 h-16 rounded-2xl bg-dark-input border border-border flex flex-col items-center justify-center"
-                          title={item.label}
-                        >
-                          <span className="text-2xl">{item.emoji}</span>
-                          <span className="text-xs text-muted">{index + 1}</span>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {lessonChunks.length > 1 && (
-                  <div className="mt-6">
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {lessonChunks.map((_: string, index: number) => (
-                        <button
-                          key={index}
-                          onClick={() => setCurrentAyahIndex(index)}
-                          className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                            currentAyahIndex === index
-                              ? 'bg-primary text-white'
-                              : 'bg-dark-input text-muted hover:bg-dark-card-hover'
-                          }`}
-                        >
-                          {index + 1}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="mt-4 flex justify-center gap-3">
-                      <button
-                        onClick={() => setCurrentAyahIndex((prev) => Math.max(0, prev - 1))}
-                        disabled={currentAyahIndex === 0}
-                        className="btn-secondary disabled:opacity-40"
-                      >
-                        Previous Ayah
-                      </button>
-                      <button
-                        onClick={() => setCurrentAyahIndex((prev) => Math.min(lessonChunks.length - 1, prev + 1))}
-                        disabled={currentAyahIndex >= lessonChunks.length - 1}
-                        className="btn-primary disabled:opacity-40"
-                      >
-                        Next Ayah
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {isListening && (
+              {/* ── Puzzle mode ─────────────────────────────────────────── */}
+              <AnimatePresence mode="wait">
+                {puzzleMode && currentPuzzle ? (
                   <motion.div
+                    key="puzzle-view"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="mt-8 flex justify-center"
+                    exit={{ opacity: 0 }}
                   >
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/20 text-secondary">
-                      <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                      <span className="text-sm font-semibold">Listening...</span>
+                    <PuzzleDisplay
+                      puzzle={currentPuzzle}
+                      result={puzzleResult}
+                      onHint={requestHint}
+                      hint={puzzleHint}
+                      hintNum={puzzleHintNum}
+                    />
+
+                    {/* After result: Next Puzzle button */}
+                    {puzzleResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="mt-4 flex justify-center"
+                      >
+                        <button
+                          onClick={requestNextPuzzle}
+                          className="btn-primary flex items-center gap-2"
+                        >
+                          Next Puzzle <ChevronRight size={16} />
+                        </button>
+                      </motion.div>
+                    )}
+                  </motion.div>
+                ) : puzzleMode ? (
+                  <motion.div
+                    key="puzzle-loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="glass-card rounded-3xl p-12 text-center"
+                  >
+                    <div className="text-5xl mb-4 animate-bounce">🎯</div>
+                    <p className="text-lg font-semibold">Loading your puzzle…</p>
+                  </motion.div>
+                ) : (
+                  /* ── Free-talk mode (original) ─────────────────────── */
+                  <motion.div
+                    key="free-talk"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <div className="glass-card rounded-3xl p-8 sm:p-12 text-center">
+                      {error && <p className="text-sm text-secondary mb-4">{error}</p>}
+                      <p className="text-sm text-muted uppercase tracking-widest mb-2">{lessonTitle}</p>
+                      {lessonChunks.length > 1 && (
+                        <p className="text-xs text-muted mb-6">Ayah {currentAyahIndex + 1} of {lessonChunks.length}</p>
+                      )}
+
+                      <div className={`${isQuranSession ? 'arabic' : ''} text-4xl sm:text-5xl lg:text-6xl leading-loose`}>
+                        {words.map((word: string, i: number) => (
+                          <motion.span
+                            key={i}
+                            className={`inline-block mx-2 px-3 py-2 rounded-xl transition-all duration-300 ${
+                              highlightedWordIndex === i
+                                ? 'bg-primary/30 text-primary-light scale-110'
+                                : wordCorrectness[i] === true
+                                ? 'text-success'
+                                : wordCorrectness[i] === false
+                                ? 'text-secondary'
+                                : ''
+                            }`}
+                            animate={
+                              highlightedWordIndex === i
+                                ? { scale: [1, 1.1, 1], y: [0, -4, 0] }
+                                : {}
+                            }
+                            transition={{ duration: 0.5 }}
+                          >
+                            {word}
+                          </motion.span>
+                        ))}
+                      </div>
+
+                      {isMathSession && countingItems.length > 0 && (
+                        <div className="mt-8">
+                          <p className="text-sm text-muted mb-4">Count the objects one by one:</p>
+                          <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 justify-items-center">
+                            {countingItems.map((item, index) => (
+                              <motion.div
+                                key={item.id}
+                                initial={{ opacity: 0, scale: 0.6, y: 12 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                transition={{ delay: index * 0.08, duration: 0.3 }}
+                                className="w-16 h-16 rounded-2xl bg-dark-input border border-border flex flex-col items-center justify-center"
+                                title={item.label}
+                              >
+                                <span className="text-2xl">{item.emoji}</span>
+                                <span className="text-xs text-muted">{index + 1}</span>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {lessonChunks.length > 1 && (
+                        <div className="mt-6">
+                          <div className="flex flex-wrap justify-center gap-2">
+                            {lessonChunks.map((_: string, index: number) => (
+                              <button
+                                key={index}
+                                onClick={() => setCurrentAyahIndex(index)}
+                                className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                                  currentAyahIndex === index
+                                    ? 'bg-primary text-white'
+                                    : 'bg-dark-input text-muted hover:bg-dark-card-hover'
+                                }`}
+                              >
+                                {index + 1}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="mt-4 flex justify-center gap-3">
+                            <button
+                              onClick={() => setCurrentAyahIndex((prev) => Math.max(0, prev - 1))}
+                              disabled={currentAyahIndex === 0}
+                              className="btn-secondary disabled:opacity-40"
+                            >
+                              Previous Ayah
+                            </button>
+                            <button
+                              onClick={() => setCurrentAyahIndex((prev) => Math.min(lessonChunks.length - 1, prev + 1))}
+                              disabled={currentAyahIndex >= lessonChunks.length - 1}
+                              className="btn-primary disabled:opacity-40"
+                            >
+                              Next Ayah
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Puzzle mode CTA when no puzzle active */}
+                      {sessionStarted && !puzzleMode && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 1 }}
+                          className="mt-8 flex justify-center"
+                        >
+                          <button
+                            onClick={togglePuzzleMode}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 transition-all text-sm font-semibold"
+                          >
+                            <Puzzle size={15} /> Try Puzzle Mode
+                          </button>
+                        </motion.div>
+                      )}
+
+                      {isListening && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="mt-8 flex justify-center"
+                        >
+                          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/20 text-secondary">
+                            <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+                            <span className="text-sm font-semibold">Listening...</span>
+                          </div>
+                        </motion.div>
+                      )}
                     </div>
                   </motion.div>
                 )}
-              </div>
+              </AnimatePresence>
 
-              {/* Control Bar */}
+              {/* Control Bar — always visible during active session */}
               <div className="mt-8 flex items-center justify-center gap-4">
                 <button
                   onClick={toggleListening}

@@ -16,6 +16,13 @@ from fastapi.responses import FileResponse
 from backend.core.database import SessionLocal
 from backend.models import Lesson
 from backend.services.tutor_engine import TutorEngine
+from backend.services.puzzle_engine import (
+    generate_quran_puzzle,
+    generate_math_puzzle,
+    grade_puzzle,
+    get_puzzle_hint,
+    next_puzzle_type,
+)
 from tutor.openclaw import OpenClawMemory, compose_openclaw_prompt, load_openclaw_skill
 from tutor.prompts import get_system_prompt
 from tutor.curriculum.lessons import get_curriculum
@@ -278,6 +285,12 @@ async def realtime_ws(websocket: WebSocket):
     active_lesson_context = None
     current_ayah_index = 0
 
+    # Puzzle mode state
+    puzzle_mode: bool = False
+    current_puzzle: dict | None = None
+    puzzle_last_type: str | None = None
+    puzzle_hint_num: int = 0
+
     async def send_tutor_message(text: str, ayah_index: int | None = None):
         """Send tutor text + generate TTS audio."""
         import asyncio as _aio
@@ -296,6 +309,42 @@ async def realtime_ws(websocket: WebSocket):
         await websocket.send_json(msg)
         await websocket.send_json({"type": "turn_complete"})
 
+
+    async def send_next_puzzle():
+        """Generate the next puzzle for the current lesson and send it to the client."""
+        nonlocal current_puzzle, puzzle_last_type, puzzle_hint_num
+        puzzle_hint_num = 0
+
+        lesson_level = (active_lesson_context or {}).get("level", 1)
+        lesson_objects = (active_lesson_context or {}).get("content", {}).get("objects", [])
+        ptype = next_puzzle_type(active_subject, lesson_level, puzzle_last_type)
+        puzzle_last_type = ptype
+
+        if active_subject == "quran":
+            ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs", [])
+            if not ayahs:
+                await websocket.send_json({"type": "error", "message": "No ayahs found for puzzle."})
+                return
+            ayah = ayahs[max(0, min(current_ayah_index, len(ayahs) - 1))]
+            puzzle = generate_quran_puzzle(ayah, ptype, lesson_level)
+        elif active_subject == "math":
+            puzzle = generate_math_puzzle(ptype, lesson_level, lesson_objects)
+        else:
+            await websocket.send_json({"type": "error", "message": "Puzzles not yet available for this subject."})
+            return
+
+        current_puzzle = puzzle
+
+        # Speak the prompt via TTS
+        prompt_text = puzzle.get("prompt_ar") if active_subject == "quran" else puzzle.get("prompt_en", "")
+        import asyncio as _aio
+        loop = _aio.get_running_loop()
+        audio_file = await loop.run_in_executor(None, _generate_tts, prompt_text, active_subject == "quran")
+
+        msg: dict = {"type": "puzzle_start", "puzzle": puzzle}
+        if audio_file:
+            msg["audio"] = f"/api/realtime/audio/{audio_file}"
+        await websocket.send_json(msg)
 
     def _build_openclaw_system_prompt(system_prompt_text: str | None = None) -> str:
         memory_block = OPENCLAW_MEMORY.get_context_block(active_child_key, active_subject)
@@ -511,6 +560,31 @@ async def realtime_ws(websocket: WebSocket):
 
                     await websocket.send_json({"type": "transcription", "text": transcription})
 
+                    # ── Puzzle mode: grade against current puzzle ──────────────
+                    submitted_puzzle_id = msg.get("puzzle_id")
+                    if puzzle_mode and current_puzzle and (
+                        not submitted_puzzle_id or submitted_puzzle_id == current_puzzle.get("id")
+                    ):
+                        import asyncio as _aio
+                        _ploop = _aio.get_running_loop()
+                        result = grade_puzzle(current_puzzle, transcription)
+                        encouragement = result.get("encouragement", "")
+                        is_arabic = result.get("is_arabic", active_subject == "quran")
+                        audio_file = await _ploop.run_in_executor(None, _generate_tts, encouragement, is_arabic)
+                        puzzle_result_msg: dict = {
+                            "type": "puzzle_result",
+                            "puzzle_id": current_puzzle.get("id"),
+                            "is_correct": result["is_correct"],
+                            "accuracy": result.get("accuracy", 0),
+                            "encouragement": encouragement,
+                            "details": result.get("details", {}),
+                        }
+                        if audio_file:
+                            puzzle_result_msg["audio"] = f"/api/realtime/audio/{audio_file}"
+                        await websocket.send_json(puzzle_result_msg)
+                        continue
+
+                    # ── Regular recitation feedback ────────────────────────────
                     # Compare against target ayah
                     ayahs = (active_lesson_context or {}).get("content", {}).get("ayahs") or []
                     if ayahs and active_lesson_context:
@@ -553,6 +627,29 @@ async def realtime_ws(websocket: WebSocket):
                     import traceback; traceback.print_exc()
                     await websocket.send_json({"type": "error", "message": f"Audio error: {str(e)[:100]}"})
 
+
+            elif msg_type == "puzzle_toggle":
+                puzzle_mode = msg.get("enabled", not puzzle_mode)
+                await websocket.send_json({"type": "puzzle_mode_changed", "enabled": puzzle_mode})
+                if puzzle_mode:
+                    await send_next_puzzle()
+
+            elif msg_type == "puzzle_next":
+                if puzzle_mode:
+                    await send_next_puzzle()
+
+            elif msg_type == "puzzle_hint":
+                if current_puzzle:
+                    puzzle_hint_num += 1
+                    hint_text = get_puzzle_hint(current_puzzle, puzzle_hint_num)
+                    is_arabic = active_subject == "quran"
+                    import asyncio as _aio
+                    _loop = _aio.get_running_loop()
+                    audio_file = await _loop.run_in_executor(None, _generate_tts, hint_text, is_arabic)
+                    hint_msg: dict = {"type": "puzzle_hint", "hint": hint_text, "hint_num": puzzle_hint_num}
+                    if audio_file:
+                        hint_msg["audio"] = f"/api/realtime/audio/{audio_file}"
+                    await websocket.send_json(hint_msg)
 
             elif msg_type == "barge_in":
                 await websocket.send_json({"type": "turn_complete", "reason": "barge_in"})
