@@ -66,6 +66,11 @@ export default function LiveTutorSession() {
 
   useEffect(() => {
     return () => {
+      stopListening()
+      if (currentStreamRef.current) {
+        currentStreamRef.current.getTracks().forEach((t) => t.stop())
+        currentStreamRef.current = null
+      }
       endStoreSession()
       if (wsRef.current) {
         wsRef.current.close()
@@ -144,7 +149,8 @@ export default function LiveTutorSession() {
 
     const utterance = new SpeechSynthesisUtterance(text)
     const forceArabicVoice = lesson?.subject === 'quran'
-    const isArabic = forceArabicVoice || /[\u0600-\u06FF]/.test(text)
+    const forceEnglishVoice = lesson?.subject === 'english' || lesson?.subject === 'math'
+    const isArabic = forceArabicVoice || (!forceEnglishVoice && /[\u0600-\u06FF]/.test(text))
     const voices = synth.getVoices()
 
     if (forceArabicVoice || isArabic) {
@@ -215,13 +221,53 @@ export default function LiveTutorSession() {
     ? `Surah ${lesson.content.surah}`
     : lesson?.title || 'Current Lesson'
 
+  const isQuranSession = lesson?.subject === 'quran'
+  const isMathSession = lesson?.subject === 'math'
+
+  const mathMaxCount = (() => {
+    if (!isMathSession) return 0
+    const rangeText = lesson?.content?.range
+    const rangeMatch = typeof rangeText === 'string' ? rangeText.match(/(\d+)\s*-\s*(\d+)/) : null
+    if (rangeMatch) return Number(rangeMatch[2])
+    const explicitMax = lesson?.content?.max || lesson?.content?.count
+    if (typeof explicitMax === 'number') return explicitMax
+    return 5
+  })()
+
+  const mathObjects = Array.isArray(lesson?.content?.objects) && lesson.content.objects.length > 0
+    ? lesson.content.objects
+    : ['block', 'chicken', 'star']
+
+  const objectEmojiMap: Record<string, string> = {
+    block: '🧱',
+    chicken: '🐔',
+    star: '⭐',
+    apple: '🍎',
+    ball: '⚽',
+    cube: '🧊',
+    car: '🚗',
+    duck: '🦆',
+    cat: '🐱',
+  }
+
+  const countingItems = Array.from({ length: Math.max(mathMaxCount, 0) }, (_, index) => {
+    const objectName = String(mathObjects[index % mathObjects.length] || 'block').toLowerCase()
+    return {
+      id: `${objectName}-${index}`,
+      emoji: objectEmojiMap[objectName] || '🔢',
+      label: objectName,
+    }
+  })
+
   const lessonChunks = Array.isArray(lesson?.content?.ayahs) && lesson?.content?.ayahs.length > 0
     ? lesson.content.ayahs
     : lesson?.content?.letter
     ? [lesson.content.letter]
+    : isMathSession && mathMaxCount > 0
+    ? [Array.from({ length: mathMaxCount }, (_, i) => i + 1).join(' ')]
     : []
 
-  const displayText = lessonChunks[currentAyahIndex] || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
+  const displayText = lessonChunks[currentAyahIndex] || (isQuranSession ? 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' : 'Let’s begin!')
   const words = displayText.split(' ').filter(Boolean)
 
   useEffect(() => {
@@ -276,7 +322,7 @@ export default function LiveTutorSession() {
         break
       case 'processing':
         setProcessing(true)
-        setTutorText(msg.message || 'جاري التحليل...')
+        setTutorText(msg.message || (isQuranSession ? 'جاري التحليل...' : 'Analyzing your answer...'))
         break
       case 'recitation_feedback':
         setProcessing(false)
@@ -299,6 +345,14 @@ export default function LiveTutorSession() {
       case 'turn_complete':
         setSpeaking(false)
         setProcessing(false)
+        if (isHandsFreeQuran && connected && !isListening) {
+          if (autoListenTimeoutRef.current) {
+            window.clearTimeout(autoListenTimeoutRef.current)
+          }
+          autoListenTimeoutRef.current = window.setTimeout(() => {
+            startListening()
+          }, 450)
+        }
         break
       case 'error':
         setError(msg.message)
@@ -308,65 +362,189 @@ export default function LiveTutorSession() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const currentStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const vadIntervalRef = useRef<number | null>(null)
+  const maxDurationTimeoutRef = useRef<number | null>(null)
+  const autoListenTimeoutRef = useRef<number | null>(null)
+  const speechDetectedRef = useRef(false)
+  const silenceStartRef = useRef<number | null>(null)
   const [processing, setProcessing] = useState(false)
   const [recitationAccuracy, setRecitationAccuracy] = useState(0)
+  const isHandsFreeQuran = isQuranSession && sessionStarted
+
+  const cleanupVad = () => {
+    if (vadIntervalRef.current) {
+      window.clearInterval(vadIntervalRef.current)
+      vadIntervalRef.current = null
+    }
+    if (maxDurationTimeoutRef.current) {
+      window.clearTimeout(maxDurationTimeoutRef.current)
+      maxDurationTimeoutRef.current = null
+    }
+    if (autoListenTimeoutRef.current) {
+      window.clearTimeout(autoListenTimeoutRef.current)
+      autoListenTimeoutRef.current = null
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
+    }
+    analyserRef.current = null
+    speechDetectedRef.current = false
+    silenceStartRef.current = null
+  }
+
+  const stopListening = () => {
+    cleanupVad()
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop()
+    }
+  }
+
+  const startVoiceActivityMonitor = () => {
+    const stream = currentStreamRef.current
+    if (!stream) return
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      const audioContext = new AudioCtx()
+      audioContextRef.current = audioContext
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024
+      source.connect(analyser)
+      analyserRef.current = analyser
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount)
+      const silenceThreshold = 0.012
+      const silenceDurationMs = 1200
+
+      vadIntervalRef.current = window.setInterval(() => {
+        if (!analyserRef.current || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return
+
+        analyserRef.current.getByteTimeDomainData(dataArray)
+        let sumSquares = 0
+        for (let i = 0; i < dataArray.length; i++) {
+          const normalized = (dataArray[i] - 128) / 128
+          sumSquares += normalized * normalized
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length)
+        const now = Date.now()
+
+        if (rms > silenceThreshold) {
+          speechDetectedRef.current = true
+          silenceStartRef.current = null
+          return
+        }
+
+        if (!speechDetectedRef.current) return
+
+        if (silenceStartRef.current === null) {
+          silenceStartRef.current = now
+          return
+        }
+
+        if (now - silenceStartRef.current >= silenceDurationMs) {
+          stopListening()
+        }
+      }, 120)
+
+      maxDurationTimeoutRef.current = window.setTimeout(() => {
+        if (isListening) stopListening()
+      }, 12000)
+    } catch {
+      // If VAD fails, fallback to duration-based recording only
+      maxDurationTimeoutRef.current = window.setTimeout(() => {
+        if (isListening) stopListening()
+      }, 6000)
+    }
+  }
+
+  const startListening = () => {
+    if (!wsRef.current || !connected || isListening || processing || isSpeaking) return
+
+    setProcessing(false)
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    })
+      .then((stream) => {
+        currentStreamRef.current = stream
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+        mediaRecorderRef.current = mediaRecorder
+        audioChunksRef.current = []
+        speechDetectedRef.current = false
+        silenceStartRef.current = null
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data)
+          }
+        }
+
+        mediaRecorder.onstop = async () => {
+          cleanupVad()
+
+          if (currentStreamRef.current) {
+            currentStreamRef.current.getTracks().forEach((t) => t.stop())
+            currentStreamRef.current = null
+          }
+
+          setListening(false)
+
+          if (audioChunksRef.current.length === 0 || !wsRef.current) return
+          if (isHandsFreeQuran && !speechDetectedRef.current) {
+            // Ignore silent turns in hands-free mode.
+            return
+          }
+
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+          const reader = new FileReader()
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1]
+            if (base64 && wsRef.current) {
+              wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
+              wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
+              setProcessing(true)
+            }
+          }
+          reader.readAsDataURL(blob)
+        }
+
+        mediaRecorder.start(400)
+        setListening(true)
+        if (!isHandsFreeQuran) {
+          setTutorText('')
+        }
+        startVoiceActivityMonitor()
+      })
+      .catch((err) => {
+        console.error('Mic error:', err)
+        setError('Microphone access denied. Please allow mic access.')
+      })
+  }
 
   const toggleListening = () => {
     if (!wsRef.current || !connected) return
 
     if (isListening) {
-      // Stop recording and send audio
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop()
-      }
-      setListening(false)
+      stopListening()
     } else {
-      // Start recording
-      setProcessing(false)
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((stream) => {
-          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
-          mediaRecorderRef.current = mediaRecorder
-          audioChunksRef.current = []
-
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              audioChunksRef.current.push(event.data)
-            }
-          }
-
-          mediaRecorder.onstop = async () => {
-            // Stop all tracks
-            stream.getTracks().forEach((t) => t.stop())
-
-            if (audioChunksRef.current.length === 0 || !wsRef.current) return
-
-            // Combine and send as base64
-            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-            const reader = new FileReader()
-            reader.onload = () => {
-              const base64 = (reader.result as string).split(',')[1]
-              if (base64 && wsRef.current) {
-                wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
-                wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
-                setProcessing(true)
-              }
-            }
-            reader.readAsDataURL(blob)
-          }
-
-          mediaRecorder.start(500) // collect every 500ms
-          setListening(true)
-          setTutorText('')
-        })
-        .catch((err) => {
-          console.error('Mic error:', err)
-          setError('Microphone access denied. Please allow mic access.')
-        })
+      startListening()
     }
   }
 
   const endSession = async () => {
+    stopListening()
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getTracks().forEach((t) => t.stop())
+      currentStreamRef.current = null
+    }
     if (wsRef.current) {
       wsRef.current.send(JSON.stringify({ type: 'session_end' }))
       wsRef.current.close()
@@ -512,7 +690,7 @@ export default function LiveTutorSession() {
                   <p className="text-xs text-muted mb-6">Ayah {currentAyahIndex + 1} of {lessonChunks.length}</p>
                 )}
 
-                <div className="arabic text-4xl sm:text-5xl lg:text-6xl leading-loose">
+                <div className={`${isQuranSession ? 'arabic' : ''} text-4xl sm:text-5xl lg:text-6xl leading-loose`}>
                   {words.map((word: string, i: number) => (
                     <motion.span
                       key={i}
@@ -536,6 +714,27 @@ export default function LiveTutorSession() {
                     </motion.span>
                   ))}
                 </div>
+
+                {isMathSession && countingItems.length > 0 && (
+                  <div className="mt-8">
+                    <p className="text-sm text-muted mb-4">Count the objects one by one:</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 justify-items-center">
+                      {countingItems.map((item, index) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, scale: 0.6, y: 12 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ delay: index * 0.08, duration: 0.3 }}
+                          className="w-16 h-16 rounded-2xl bg-dark-input border border-border flex flex-col items-center justify-center"
+                          title={item.label}
+                        >
+                          <span className="text-2xl">{item.emoji}</span>
+                          <span className="text-xs text-muted">{index + 1}</span>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {lessonChunks.length > 1 && (
                   <div className="mt-6">
@@ -581,7 +780,7 @@ export default function LiveTutorSession() {
                   >
                     <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/20 text-secondary">
                       <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                      <span className="text-sm font-semibold">Listening...</span>
+                      <span className="text-sm font-semibold">{isHandsFreeQuran ? 'Listening automatically…' : 'Listening...'}</span>
                     </div>
                   </motion.div>
                 )}
@@ -591,7 +790,7 @@ export default function LiveTutorSession() {
               <div className="mt-8 flex items-center justify-center gap-4">
                 <button
                   onClick={toggleListening}
-                  disabled={processing}
+                  disabled={processing || (isHandsFreeQuran && isSpeaking)}
                   className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-all disabled:opacity-50 ${
                     processing
                       ? 'bg-yellow-500 shadow-yellow-500/30'
@@ -599,6 +798,7 @@ export default function LiveTutorSession() {
                       ? 'bg-secondary shadow-secondary/30 animate-pulse'
                       : 'bg-gradient-to-br from-primary to-secondary shadow-primary/30 hover:scale-105'
                   }`}
+                  title={isHandsFreeQuran ? 'Hands-free mic: tap to pause/resume' : 'Tap to speak'}
                 >
                   {processing ? <span className="text-lg">⏳</span> : isListening ? <MicOff size={28} /> : <Mic size={28} />}
                 </button>
