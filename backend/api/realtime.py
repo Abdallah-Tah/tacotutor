@@ -265,7 +265,7 @@ async def realtime_ws(websocket: WebSocket):
     async def send_tutor_message(text: str, ayah_index: int | None = None):
         """Send tutor text + generate TTS audio."""
         import asyncio as _aio
-        is_arabic = active_subject == "quran" or any("\u0600" <= c <= "\u06FF" for c in text)
+        is_arabic = active_subject == "quran"
         try:
             loop = _aio.get_running_loop()
             audio_file = await loop.run_in_executor(None, _generate_tts, text, is_arabic)
