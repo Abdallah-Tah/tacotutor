@@ -1,6 +1,6 @@
 """
-TacoTutor Backend - WebSocket endpoint for live tutoring.
-Uses Hugging Face chat completion for tutor replies and lets the browser speak them.
+TacoTutor Backend - WebSocket endpoint for live Quran tutoring.
+Uses configurable LLM providers (OpenAI/Gemini/HuggingFace) for tutor replies and lets the browser speak them.
 """
 
 import json
@@ -19,7 +19,8 @@ from backend.services.tutor_engine import TutorEngine
 from tutor.openclaw import OpenClawMemory, compose_openclaw_prompt, load_openclaw_skill
 from tutor.prompts import get_system_prompt
 from tutor.curriculum.lessons import get_curriculum
-from tutor.secrets import get_hf_api_key, get_secret
+from tutor.secrets import get_secret
+from tutor.llm.providers import get_llm
 from tutor.stt.providers import get_stt
 
 router = APIRouter(tags=["realtime"])
@@ -27,7 +28,7 @@ router = APIRouter(tags=["realtime"])
 # Initialize Tutor Engine
 engine = TutorEngine()
 
-MODEL = os.environ.get("HUGGINGFACE_TEXT_MODEL", "Qwen/Qwen2.5-7B-Instruct:fastest")
+QURAN_LLM_PROVIDER = os.environ.get("QURAN_LLM_PROVIDER", "openai").strip().lower()
 TTS_DIR = Path("/tmp/tacotutor_tts")
 TTS_DIR.mkdir(exist_ok=True)
 
@@ -258,14 +259,14 @@ async def realtime_ws(websocket: WebSocket):
     await websocket.accept()
 
     session_id = websocket.query_params.get("session")
-    subject = websocket.query_params.get("subject", "quran")
+    subject = "quran"
     child_id = websocket.query_params.get("childId", "student")
 
     print(f"[REALTIME] New connection: session={session_id}, child={child_id}, subject={subject}")
 
     try:
-        hf_api_key = get_hf_api_key()
-    except ValueError as exc:
+        llm_provider = get_llm(QURAN_LLM_PROVIDER)
+    except Exception as exc:
         await websocket.send_json({"type": "error", "message": str(exc)})
         await websocket.close(code=1011)
         return
@@ -310,22 +311,11 @@ async def realtime_ws(websocket: WebSocket):
         system_prompt_text: str | None = None,
         remember_user_text: str | None = None,
     ) -> str:
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                "https://router.huggingface.co/v1/chat/completions",
-                headers={"Authorization": f"Bearer {hf_api_key}"},
-                json={
-                    "model": MODEL,
-                    "messages": [
-                        {"role": "system", "content": _build_openclaw_system_prompt(system_prompt_text)},
-                        {"role": "user", "content": user_text},
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 256,
-                },
-            )
-        response.raise_for_status()
-        reply = (response.json()["choices"][0]["message"]["content"] or "").strip()
+        messages = [
+            {"role": "system", "content": _build_openclaw_system_prompt(system_prompt_text)},
+            {"role": "user", "content": user_text},
+        ]
+        reply = (await llm_provider.chat(messages, temperature=0.6, max_tokens=256) or "").strip()
         if remember_user_text:
             OPENCLAW_MEMORY.remember_turn(active_child_key, active_subject, remember_user_text, reply)
         return reply
@@ -363,11 +353,11 @@ async def realtime_ws(websocket: WebSocket):
                 current_ayah_index = 0
 
                 if active_lesson_context:
-                    active_subject = active_lesson_context["subject"]
+                    active_subject = "quran"
                     active_system_prompt = _build_system_prompt(
                         active_subject,
                         lesson_level=active_lesson_context.get("level"),
-                        lesson_content=active_lesson_context.get("content"),
+                        lesson_content=active_lesson_context.get("content") if active_lesson_context.get("subject") == "quran" else None,
                     )
 
                 opening_prompt = _build_lesson_prompt(

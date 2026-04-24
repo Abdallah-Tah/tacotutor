@@ -66,6 +66,11 @@ export default function LiveTutorSession() {
 
   useEffect(() => {
     return () => {
+      stopListening()
+      if (currentStreamRef.current) {
+        currentStreamRef.current.getTracks().forEach((t) => t.stop())
+        currentStreamRef.current = null
+      }
       endStoreSession()
       if (wsRef.current) {
         wsRef.current.close()
@@ -104,7 +109,7 @@ export default function LiveTutorSession() {
       setSessionStarted(true)
       connectWebSocket(sessionId)
     } catch (err: any) {
-      setError('Failed to start session')
+      setError('فشل بدء الجلسة')
     }
   }
 
@@ -174,7 +179,7 @@ export default function LiveTutorSession() {
     utterance.onerror = () => {
       setSpeaking(false)
       if (!speechReady) {
-        setError('Tap the speaker button once if iPhone blocks auto audio.')
+        setError('إذا كان الصوت محظوراً على iPhone، اضغط زر الصوت مرة واحدة.')
       }
     }
     synth.speak(utterance)
@@ -182,7 +187,7 @@ export default function LiveTutorSession() {
 
   const connectWebSocket = (sessionId: string) => {
     const params = new URLSearchParams({ session: sessionId })
-    if (lesson?.subject) params.set('subject', lesson.subject)
+    params.set('subject', 'quran')
     const wsUrl = buildWebSocketUrl(`/api/realtime/ws?${params.toString()}`)
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -203,7 +208,7 @@ export default function LiveTutorSession() {
     }
 
     ws.onerror = () => {
-      setError('Connection error')
+      setError('خطأ في الاتصال')
       setConnected(false)
     }
 
@@ -214,7 +219,9 @@ export default function LiveTutorSession() {
 
   const lessonTitle = lesson?.content?.surah
     ? `Surah ${lesson.content.surah}`
-    : lesson?.title || 'Current Lesson'
+    : lesson?.title || 'الدرس الحالي'
+
+  const isQuranSession = true
 
   const isQuranSession = lesson?.subject === 'quran'
   const isMathSession = lesson?.subject === 'math'
@@ -340,6 +347,14 @@ export default function LiveTutorSession() {
       case 'turn_complete':
         setSpeaking(false)
         setProcessing(false)
+        if (isHandsFreeQuran && connected && !isListening) {
+          if (autoListenTimeoutRef.current) {
+            window.clearTimeout(autoListenTimeoutRef.current)
+          }
+          autoListenTimeoutRef.current = window.setTimeout(() => {
+            startListening()
+          }, 450)
+        }
         break
       case 'error':
         setError(msg.message)
@@ -349,65 +364,189 @@ export default function LiveTutorSession() {
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const currentStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const vadIntervalRef = useRef<number | null>(null)
+  const maxDurationTimeoutRef = useRef<number | null>(null)
+  const autoListenTimeoutRef = useRef<number | null>(null)
+  const speechDetectedRef = useRef(false)
+  const silenceStartRef = useRef<number | null>(null)
   const [processing, setProcessing] = useState(false)
   const [recitationAccuracy, setRecitationAccuracy] = useState(0)
+  const isHandsFreeQuran = isQuranSession && sessionStarted
+
+  const cleanupVad = () => {
+    if (vadIntervalRef.current) {
+      window.clearInterval(vadIntervalRef.current)
+      vadIntervalRef.current = null
+    }
+    if (maxDurationTimeoutRef.current) {
+      window.clearTimeout(maxDurationTimeoutRef.current)
+      maxDurationTimeoutRef.current = null
+    }
+    if (autoListenTimeoutRef.current) {
+      window.clearTimeout(autoListenTimeoutRef.current)
+      autoListenTimeoutRef.current = null
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
+    }
+    analyserRef.current = null
+    speechDetectedRef.current = false
+    silenceStartRef.current = null
+  }
+
+  const stopListening = () => {
+    cleanupVad()
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop()
+    }
+  }
+
+  const startVoiceActivityMonitor = () => {
+    const stream = currentStreamRef.current
+    if (!stream) return
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      const audioContext = new AudioCtx()
+      audioContextRef.current = audioContext
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024
+      source.connect(analyser)
+      analyserRef.current = analyser
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount)
+      const silenceThreshold = 0.012
+      const silenceDurationMs = 1200
+
+      vadIntervalRef.current = window.setInterval(() => {
+        if (!analyserRef.current || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') return
+
+        analyserRef.current.getByteTimeDomainData(dataArray)
+        let sumSquares = 0
+        for (let i = 0; i < dataArray.length; i++) {
+          const normalized = (dataArray[i] - 128) / 128
+          sumSquares += normalized * normalized
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length)
+        const now = Date.now()
+
+        if (rms > silenceThreshold) {
+          speechDetectedRef.current = true
+          silenceStartRef.current = null
+          return
+        }
+
+        if (!speechDetectedRef.current) return
+
+        if (silenceStartRef.current === null) {
+          silenceStartRef.current = now
+          return
+        }
+
+        if (now - silenceStartRef.current >= silenceDurationMs) {
+          stopListening()
+        }
+      }, 120)
+
+      maxDurationTimeoutRef.current = window.setTimeout(() => {
+        if (isListening) stopListening()
+      }, 12000)
+    } catch {
+      // If VAD fails, fallback to duration-based recording only
+      maxDurationTimeoutRef.current = window.setTimeout(() => {
+        if (isListening) stopListening()
+      }, 6000)
+    }
+  }
+
+  const startListening = () => {
+    if (!wsRef.current || !connected || isListening || processing || isSpeaking) return
+
+    setProcessing(false)
+    navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    })
+      .then((stream) => {
+        currentStreamRef.current = stream
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+        mediaRecorderRef.current = mediaRecorder
+        audioChunksRef.current = []
+        speechDetectedRef.current = false
+        silenceStartRef.current = null
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data)
+          }
+        }
+
+        mediaRecorder.onstop = async () => {
+          cleanupVad()
+
+          if (currentStreamRef.current) {
+            currentStreamRef.current.getTracks().forEach((t) => t.stop())
+            currentStreamRef.current = null
+          }
+
+          setListening(false)
+
+          if (audioChunksRef.current.length === 0 || !wsRef.current) return
+          if (isHandsFreeQuran && !speechDetectedRef.current) {
+            // Ignore silent turns in hands-free mode.
+            return
+          }
+
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+          const reader = new FileReader()
+          reader.onload = () => {
+            const base64 = (reader.result as string).split(',')[1]
+            if (base64 && wsRef.current) {
+              wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
+              wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
+              setProcessing(true)
+            }
+          }
+          reader.readAsDataURL(blob)
+        }
+
+        mediaRecorder.start(400)
+        setListening(true)
+        if (!isHandsFreeQuran) {
+          setTutorText('')
+        }
+        startVoiceActivityMonitor()
+      })
+      .catch((err) => {
+        console.error('Mic error:', err)
+        setError('Microphone access denied. Please allow mic access.')
+      })
+  }
 
   const toggleListening = () => {
     if (!wsRef.current || !connected) return
 
     if (isListening) {
-      // Stop recording and send audio
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop()
-      }
-      setListening(false)
+      stopListening()
     } else {
-      // Start recording
-      setProcessing(false)
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((stream) => {
-          const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
-          mediaRecorderRef.current = mediaRecorder
-          audioChunksRef.current = []
-
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-              audioChunksRef.current.push(event.data)
-            }
-          }
-
-          mediaRecorder.onstop = async () => {
-            // Stop all tracks
-            stream.getTracks().forEach((t) => t.stop())
-
-            if (audioChunksRef.current.length === 0 || !wsRef.current) return
-
-            // Combine and send as base64
-            const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-            const reader = new FileReader()
-            reader.onload = () => {
-              const base64 = (reader.result as string).split(',')[1]
-              if (base64 && wsRef.current) {
-                wsRef.current.send(JSON.stringify({ type: 'audio_chunk', data: base64 }))
-                wsRef.current.send(JSON.stringify({ type: 'audio_end' }))
-                setProcessing(true)
-              }
-            }
-            reader.readAsDataURL(blob)
-          }
-
-          mediaRecorder.start(500) // collect every 500ms
-          setListening(true)
-          setTutorText('')
-        })
-        .catch((err) => {
-          console.error('Mic error:', err)
-          setError('Microphone access denied. Please allow mic access.')
-        })
+      startListening()
     }
   }
 
   const endSession = async () => {
+    stopListening()
+    if (currentStreamRef.current) {
+      currentStreamRef.current.getTracks().forEach((t) => t.stop())
+      currentStreamRef.current = null
+    }
     if (wsRef.current) {
       wsRef.current.send(JSON.stringify({ type: 'session_end' }))
       wsRef.current.close()
@@ -430,10 +569,10 @@ export default function LiveTutorSession() {
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="font-bold">Live Tutor Session</h1>
+            <h1 className="font-bold">جلسة تحفيظ مباشرة</h1>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${connected ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-              <span className="text-xs text-muted">{connected ? 'Connected' : 'Not connected'}</span>
+              <span className="text-xs text-muted">{connected ? 'متصل' : 'غير متصل'}</span>
             </div>
           </div>
         </div>
@@ -448,7 +587,7 @@ export default function LiveTutorSession() {
               }
             }}
             className="p-2 rounded-xl bg-dark-input hover:bg-dark-card-hover transition-colors"
-            title={voiceEnabled ? 'Mute tutor voice' : 'Enable tutor voice'}
+            title={voiceEnabled ? 'كتم صوت المعلّم' : 'تفعيل صوت المعلّم'}
           >
             {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
@@ -489,9 +628,9 @@ export default function LiveTutorSession() {
                     className="btn-secondary text-sm inline-flex items-center gap-2"
                   >
                     <Volume2 size={16} />
-                    Hear Tutor
+                    استمع للمعلّم
                   </button>
-                  <p className="text-xs text-muted mt-2">If iPhone blocks auto audio, tap once.</p>
+                  <p className="text-xs text-muted mt-2">إذا حظر iPhone الصوت التلقائي، اضغط مرة واحدة.</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -512,12 +651,12 @@ export default function LiveTutorSession() {
 
           {/* Transcript */}
           <div className="border-t border-border p-4">
-            <p className="text-xs text-muted uppercase tracking-wider mb-2">Your Speech</p>
+            <p className="text-xs text-muted uppercase tracking-wider mb-2">تلاوتك</p>
             <div className="min-h-[60px] p-3 rounded-xl bg-dark-input">
               {transcript ? (
                 <p className="text-sm">{transcript}</p>
               ) : (
-                <p className="text-sm text-muted italic">{isListening ? 'Listening...' : 'Press the mic to speak'}</p>
+                <p className="text-sm text-muted italic">{isListening ? 'أستمع الآن...' : 'اضغط الميكروفون للتلاوة'}</p>
               )}
             </div>
           </div>
@@ -534,13 +673,13 @@ export default function LiveTutorSession() {
               <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-5xl mx-auto mb-6 shadow-lg shadow-primary/30">
                 🕌
               </div>
-              <h2 className="text-2xl font-black mb-2">Ready to Learn?</h2>
+              <h2 className="text-2xl font-black mb-2">جاهز للتلاوة؟</h2>
               <p className="text-muted mb-6 max-w-md">
-                Start a live tutoring session where the AI tutor will listen to your recitation,
-                provide real-time feedback, and guide you through the lesson.
+                ابدأ جلسة تحفيظ مباشرة حيث يستمع المعلّم الذكي لتلاوتك،
+                ويعطيك تصحيحًا فوريًا، ويرشدك خلال الآيات.
               </p>
               <button onClick={startSession} className="btn-primary text-lg px-8 py-4">
-                Start Live Session
+                ابدأ الجلسة المباشرة
               </button>
               {error && <p className="text-sm text-secondary mt-4">{error}</p>}
             </motion.div>
@@ -550,7 +689,7 @@ export default function LiveTutorSession() {
                 {error && <p className="text-sm text-secondary mb-4">{error}</p>}
                 <p className="text-sm text-muted uppercase tracking-widest mb-2">{lessonTitle}</p>
                 {lessonChunks.length > 1 && (
-                  <p className="text-xs text-muted mb-6">Ayah {currentAyahIndex + 1} of {lessonChunks.length}</p>
+                  <p className="text-xs text-muted mb-6">الآية {currentAyahIndex + 1} من {lessonChunks.length}</p>
                 )}
 
                 <div className={`${isQuranSession ? 'arabic' : ''} text-4xl sm:text-5xl lg:text-6xl leading-loose`}>
@@ -622,14 +761,14 @@ export default function LiveTutorSession() {
                         disabled={currentAyahIndex === 0}
                         className="btn-secondary disabled:opacity-40"
                       >
-                        Previous Ayah
+                        الآية السابقة
                       </button>
                       <button
                         onClick={() => setCurrentAyahIndex((prev) => Math.min(lessonChunks.length - 1, prev + 1))}
                         disabled={currentAyahIndex >= lessonChunks.length - 1}
                         className="btn-primary disabled:opacity-40"
                       >
-                        Next Ayah
+                        الآية التالية
                       </button>
                     </div>
                   </div>
@@ -643,7 +782,7 @@ export default function LiveTutorSession() {
                   >
                     <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/20 text-secondary">
                       <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                      <span className="text-sm font-semibold">Listening...</span>
+                      <span className="text-sm font-semibold">{isHandsFreeQuran ? 'أستمع تلقائياً...' : 'أستمع...'}</span>
                     </div>
                   </motion.div>
                 )}
@@ -653,7 +792,7 @@ export default function LiveTutorSession() {
               <div className="mt-8 flex items-center justify-center gap-4">
                 <button
                   onClick={toggleListening}
-                  disabled={processing}
+                  disabled={processing || (isHandsFreeQuran && isSpeaking)}
                   className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg transition-all disabled:opacity-50 ${
                     processing
                       ? 'bg-yellow-500 shadow-yellow-500/30'
@@ -661,6 +800,7 @@ export default function LiveTutorSession() {
                       ? 'bg-secondary shadow-secondary/30 animate-pulse'
                       : 'bg-gradient-to-br from-primary to-secondary shadow-primary/30 hover:scale-105'
                   }`}
+                  title={isHandsFreeQuran ? 'ميكروفون تلقائي: اضغط للإيقاف أو المتابعة' : 'اضغط للتلاوة'}
                 >
                   {processing ? <span className="text-lg">⏳</span> : isListening ? <MicOff size={28} /> : <Mic size={28} />}
                 </button>
@@ -671,23 +811,23 @@ export default function LiveTutorSession() {
 
         {/* Right: Feedback Panel */}
         <div className="w-72 glass-card border-l border-border p-4">
-          <h3 className="font-bold mb-4">Live Feedback</h3>
+          <h3 className="font-bold mb-4">التغذية الراجعة المباشرة</h3>
 
           <div className="space-y-4">
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Session</p>
-              <p className="text-sm font-semibold">{sessionStarted ? 'Active' : 'Not started'}</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الجلسة</p>
+              <p className="text-sm font-semibold">{sessionStarted ? 'نشطة' : 'لم تبدأ'}</p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Status</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الحالة</p>
               <p className="text-sm font-semibold">
-                {processing ? 'تحليل...' : isSpeaking ? 'Tutor speaking' : isListening ? 'Listening' : 'Idle'}
+                {processing ? 'جاري التحليل...' : isSpeaking ? 'المعلّم يتحدث' : isListening ? 'أستمع' : 'خامل'}
               </p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Accuracy</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الدقة</p>
               <div className="w-full h-2 bg-dark-card rounded-full overflow-hidden">
                 <div className="h-full bg-success rounded-full" style={{ width: `${recitationAccuracy}%` }} />
               </div>
@@ -695,7 +835,7 @@ export default function LiveTutorSession() {
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Words</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الكلمات</p>
               <div className="flex gap-1 flex-wrap">
                 {words.map((_: string, i: number) => (
                   <div
