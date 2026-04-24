@@ -109,7 +109,7 @@ export default function LiveTutorSession() {
       setSessionStarted(true)
       connectWebSocket(sessionId)
     } catch (err: any) {
-      setError('Failed to start session')
+      setError('فشل بدء الجلسة')
     }
   }
 
@@ -148,9 +148,8 @@ export default function LiveTutorSession() {
     synth.resume()
 
     const utterance = new SpeechSynthesisUtterance(text)
-    const forceArabicVoice = lesson?.subject === 'quran'
-    const forceEnglishVoice = lesson?.subject === 'english' || lesson?.subject === 'math'
-    const isArabic = forceArabicVoice || (!forceEnglishVoice && /[\u0600-\u06FF]/.test(text))
+    const forceArabicVoice = true
+    const isArabic = forceArabicVoice || /[\u0600-\u06FF]/.test(text)
     const voices = synth.getVoices()
 
     if (forceArabicVoice || isArabic) {
@@ -179,7 +178,7 @@ export default function LiveTutorSession() {
     utterance.onerror = () => {
       setSpeaking(false)
       if (!speechReady) {
-        setError('Tap the speaker button once if iPhone blocks auto audio.')
+        setError('إذا كان الصوت محظوراً على iPhone، اضغط زر الصوت مرة واحدة.')
       }
     }
     synth.speak(utterance)
@@ -187,7 +186,7 @@ export default function LiveTutorSession() {
 
   const connectWebSocket = (sessionId: string) => {
     const params = new URLSearchParams({ session: sessionId })
-    if (lesson?.subject) params.set('subject', lesson.subject)
+    params.set('subject', 'quran')
     const wsUrl = buildWebSocketUrl(`/api/realtime/ws?${params.toString()}`)
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -208,7 +207,7 @@ export default function LiveTutorSession() {
     }
 
     ws.onerror = () => {
-      setError('Connection error')
+      setError('خطأ في الاتصال')
       setConnected(false)
     }
 
@@ -219,55 +218,17 @@ export default function LiveTutorSession() {
 
   const lessonTitle = lesson?.content?.surah
     ? `Surah ${lesson.content.surah}`
-    : lesson?.title || 'Current Lesson'
+    : lesson?.title || 'الدرس الحالي'
 
-  const isQuranSession = lesson?.subject === 'quran'
-  const isMathSession = lesson?.subject === 'math'
-
-  const mathMaxCount = (() => {
-    if (!isMathSession) return 0
-    const rangeText = lesson?.content?.range
-    const rangeMatch = typeof rangeText === 'string' ? rangeText.match(/(\d+)\s*-\s*(\d+)/) : null
-    if (rangeMatch) return Number(rangeMatch[2])
-    const explicitMax = lesson?.content?.max || lesson?.content?.count
-    if (typeof explicitMax === 'number') return explicitMax
-    return 5
-  })()
-
-  const mathObjects = Array.isArray(lesson?.content?.objects) && lesson.content.objects.length > 0
-    ? lesson.content.objects
-    : ['block', 'chicken', 'star']
-
-  const objectEmojiMap: Record<string, string> = {
-    block: '🧱',
-    chicken: '🐔',
-    star: '⭐',
-    apple: '🍎',
-    ball: '⚽',
-    cube: '🧊',
-    car: '🚗',
-    duck: '🦆',
-    cat: '🐱',
-  }
-
-  const countingItems = Array.from({ length: Math.max(mathMaxCount, 0) }, (_, index) => {
-    const objectName = String(mathObjects[index % mathObjects.length] || 'block').toLowerCase()
-    return {
-      id: `${objectName}-${index}`,
-      emoji: objectEmojiMap[objectName] || '🔢',
-      label: objectName,
-    }
-  })
+  const isQuranSession = true
 
   const lessonChunks = Array.isArray(lesson?.content?.ayahs) && lesson?.content?.ayahs.length > 0
     ? lesson.content.ayahs
     : lesson?.content?.letter
     ? [lesson.content.letter]
-    : isMathSession && mathMaxCount > 0
-    ? [Array.from({ length: mathMaxCount }, (_, i) => i + 1).join(' ')]
     : []
 
-  const displayText = lessonChunks[currentAyahIndex] || (isQuranSession ? 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' : 'Let’s begin!')
+  const displayText = lessonChunks[currentAyahIndex] || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
   const words = displayText.split(' ').filter(Boolean)
 
   useEffect(() => {
@@ -322,7 +283,7 @@ export default function LiveTutorSession() {
         break
       case 'processing':
         setProcessing(true)
-        setTutorText(msg.message || (isQuranSession ? 'جاري التحليل...' : 'Analyzing your answer...'))
+        setTutorText(msg.message || 'جاري التحليل...')
         break
       case 'recitation_feedback':
         setProcessing(false)
@@ -567,10 +528,10 @@ export default function LiveTutorSession() {
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="font-bold">Live Tutor Session</h1>
+            <h1 className="font-bold">جلسة تحفيظ مباشرة</h1>
             <div className="flex items-center gap-2">
               <div className={`w-2 h-2 rounded-full ${connected ? 'bg-success animate-pulse' : 'bg-muted'}`} />
-              <span className="text-xs text-muted">{connected ? 'Connected' : 'Not connected'}</span>
+              <span className="text-xs text-muted">{connected ? 'متصل' : 'غير متصل'}</span>
             </div>
           </div>
         </div>
@@ -585,7 +546,7 @@ export default function LiveTutorSession() {
               }
             }}
             className="p-2 rounded-xl bg-dark-input hover:bg-dark-card-hover transition-colors"
-            title={voiceEnabled ? 'Mute tutor voice' : 'Enable tutor voice'}
+            title={voiceEnabled ? 'كتم صوت المعلّم' : 'تفعيل صوت المعلّم'}
           >
             {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
           </button>
@@ -626,9 +587,9 @@ export default function LiveTutorSession() {
                     className="btn-secondary text-sm inline-flex items-center gap-2"
                   >
                     <Volume2 size={16} />
-                    Hear Tutor
+                    استمع للمعلّم
                   </button>
-                  <p className="text-xs text-muted mt-2">If iPhone blocks auto audio, tap once.</p>
+                  <p className="text-xs text-muted mt-2">إذا حظر iPhone الصوت التلقائي، اضغط مرة واحدة.</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -649,12 +610,12 @@ export default function LiveTutorSession() {
 
           {/* Transcript */}
           <div className="border-t border-border p-4">
-            <p className="text-xs text-muted uppercase tracking-wider mb-2">Your Speech</p>
+            <p className="text-xs text-muted uppercase tracking-wider mb-2">تلاوتك</p>
             <div className="min-h-[60px] p-3 rounded-xl bg-dark-input">
               {transcript ? (
                 <p className="text-sm">{transcript}</p>
               ) : (
-                <p className="text-sm text-muted italic">{isListening ? 'Listening...' : 'Press the mic to speak'}</p>
+                <p className="text-sm text-muted italic">{isListening ? 'أستمع الآن...' : 'اضغط الميكروفون للتلاوة'}</p>
               )}
             </div>
           </div>
@@ -671,13 +632,13 @@ export default function LiveTutorSession() {
               <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-5xl mx-auto mb-6 shadow-lg shadow-primary/30">
                 🕌
               </div>
-              <h2 className="text-2xl font-black mb-2">Ready to Learn?</h2>
+              <h2 className="text-2xl font-black mb-2">جاهز للتلاوة؟</h2>
               <p className="text-muted mb-6 max-w-md">
-                Start a live tutoring session where the AI tutor will listen to your recitation,
-                provide real-time feedback, and guide you through the lesson.
+                ابدأ جلسة تحفيظ مباشرة حيث يستمع المعلّم الذكي لتلاوتك،
+                ويعطيك تصحيحًا فوريًا، ويرشدك خلال الآيات.
               </p>
               <button onClick={startSession} className="btn-primary text-lg px-8 py-4">
-                Start Live Session
+                ابدأ الجلسة المباشرة
               </button>
               {error && <p className="text-sm text-secondary mt-4">{error}</p>}
             </motion.div>
@@ -687,7 +648,7 @@ export default function LiveTutorSession() {
                 {error && <p className="text-sm text-secondary mb-4">{error}</p>}
                 <p className="text-sm text-muted uppercase tracking-widest mb-2">{lessonTitle}</p>
                 {lessonChunks.length > 1 && (
-                  <p className="text-xs text-muted mb-6">Ayah {currentAyahIndex + 1} of {lessonChunks.length}</p>
+                  <p className="text-xs text-muted mb-6">الآية {currentAyahIndex + 1} من {lessonChunks.length}</p>
                 )}
 
                 <div className={`${isQuranSession ? 'arabic' : ''} text-4xl sm:text-5xl lg:text-6xl leading-loose`}>
@@ -715,27 +676,6 @@ export default function LiveTutorSession() {
                   ))}
                 </div>
 
-                {isMathSession && countingItems.length > 0 && (
-                  <div className="mt-8">
-                    <p className="text-sm text-muted mb-4">Count the objects one by one:</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 justify-items-center">
-                      {countingItems.map((item, index) => (
-                        <motion.div
-                          key={item.id}
-                          initial={{ opacity: 0, scale: 0.6, y: 12 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          transition={{ delay: index * 0.08, duration: 0.3 }}
-                          className="w-16 h-16 rounded-2xl bg-dark-input border border-border flex flex-col items-center justify-center"
-                          title={item.label}
-                        >
-                          <span className="text-2xl">{item.emoji}</span>
-                          <span className="text-xs text-muted">{index + 1}</span>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {lessonChunks.length > 1 && (
                   <div className="mt-6">
                     <div className="flex flex-wrap justify-center gap-2">
@@ -759,14 +699,14 @@ export default function LiveTutorSession() {
                         disabled={currentAyahIndex === 0}
                         className="btn-secondary disabled:opacity-40"
                       >
-                        Previous Ayah
+                        الآية السابقة
                       </button>
                       <button
                         onClick={() => setCurrentAyahIndex((prev) => Math.min(lessonChunks.length - 1, prev + 1))}
                         disabled={currentAyahIndex >= lessonChunks.length - 1}
                         className="btn-primary disabled:opacity-40"
                       >
-                        Next Ayah
+                        الآية التالية
                       </button>
                     </div>
                   </div>
@@ -780,7 +720,7 @@ export default function LiveTutorSession() {
                   >
                     <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/20 text-secondary">
                       <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                      <span className="text-sm font-semibold">{isHandsFreeQuran ? 'Listening automatically…' : 'Listening...'}</span>
+                      <span className="text-sm font-semibold">{isHandsFreeQuran ? 'أستمع تلقائياً...' : 'أستمع...'}</span>
                     </div>
                   </motion.div>
                 )}
@@ -798,7 +738,7 @@ export default function LiveTutorSession() {
                       ? 'bg-secondary shadow-secondary/30 animate-pulse'
                       : 'bg-gradient-to-br from-primary to-secondary shadow-primary/30 hover:scale-105'
                   }`}
-                  title={isHandsFreeQuran ? 'Hands-free mic: tap to pause/resume' : 'Tap to speak'}
+                  title={isHandsFreeQuran ? 'ميكروفون تلقائي: اضغط للإيقاف أو المتابعة' : 'اضغط للتلاوة'}
                 >
                   {processing ? <span className="text-lg">⏳</span> : isListening ? <MicOff size={28} /> : <Mic size={28} />}
                 </button>
@@ -809,23 +749,23 @@ export default function LiveTutorSession() {
 
         {/* Right: Feedback Panel */}
         <div className="w-72 glass-card border-l border-border p-4">
-          <h3 className="font-bold mb-4">Live Feedback</h3>
+          <h3 className="font-bold mb-4">التغذية الراجعة المباشرة</h3>
 
           <div className="space-y-4">
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Session</p>
-              <p className="text-sm font-semibold">{sessionStarted ? 'Active' : 'Not started'}</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الجلسة</p>
+              <p className="text-sm font-semibold">{sessionStarted ? 'نشطة' : 'لم تبدأ'}</p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Status</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الحالة</p>
               <p className="text-sm font-semibold">
-                {processing ? 'تحليل...' : isSpeaking ? 'Tutor speaking' : isListening ? 'Listening' : 'Idle'}
+                {processing ? 'جاري التحليل...' : isSpeaking ? 'المعلّم يتحدث' : isListening ? 'أستمع' : 'خامل'}
               </p>
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Accuracy</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الدقة</p>
               <div className="w-full h-2 bg-dark-card rounded-full overflow-hidden">
                 <div className="h-full bg-success rounded-full" style={{ width: `${recitationAccuracy}%` }} />
               </div>
@@ -833,7 +773,7 @@ export default function LiveTutorSession() {
             </div>
 
             <div className="p-3 rounded-xl bg-dark-input">
-              <p className="text-xs text-muted uppercase tracking-wider mb-1">Words</p>
+              <p className="text-xs text-muted uppercase tracking-wider mb-1">الكلمات</p>
               <div className="flex gap-1 flex-wrap">
                 {words.map((_: string, i: number) => (
                   <div

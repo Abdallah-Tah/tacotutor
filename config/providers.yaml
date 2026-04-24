@@ -3,7 +3,7 @@
 # Each provider has its own settings block
 
 active:
-  llm: huggingface   # ollama | openai | anthropic | gemini | huggingface | minimax | glm | openrouter
+  llm: openai   # ollama | openai | anthropic | gemini | huggingface | minimax | glm | openrouter
   stt: huggingface   # local (whisper) | deepgram | gemini | huggingface
   tts: edge          # edge | gemini
 
@@ -105,8 +105,5 @@ session:
   language: "auto"        # auto | en | ar
   subjects:
     - quran
-    - english
-    - math
-    - writing
   max_session_minutes: 30
   progress_file: "data/progress.json"
