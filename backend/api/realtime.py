@@ -36,9 +36,25 @@ TTS_DIR.mkdir(exist_ok=True)
 ARABIC_VOICES = ["ar-SA-HamedNeural", "ar-SA-ZariNeural", "ar-EG-SalmaNeural", "ar-AE-FatimaNeural"]
 
 
+def _strip_emoji(text: str) -> str:
+    """Remove emoji and special unicode characters for clean TTS."""
+    import re
+    # Remove emoji, symbols, pictographs, dingbats, misc symbols
+    text = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+                  r'\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U000024C2-\U0001F251'
+                  r'\U0001f926-\U0001f937\U00010000-\U0010ffff\u2600-\u26FF\u2700-\u27BF'
+                  r'\ufe0f\u200d]', '', text)
+    # Remove markdown-style formatting
+    text = re.sub(r'[#*_~`>]', '', text)
+    # Clean up extra spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
 def _generate_tts(text: str, is_arabic: bool = False) -> str | None:
     """Generate TTS audio using edge-tts. Returns filename or None."""
     import hashlib
+    text = _strip_emoji(text)
     if not text.strip():
         return None
     h = hashlib.md5(text.encode()).hexdigest()[:12]
@@ -124,13 +140,13 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
                     f"Greet {child_name} warmly, then start with something CONCRETE and VISUAL — "
                     f"ask {child_name} to imagine or count real objects related to {math_topic}. "
                     "Guide discovery — ask, don't tell. One tiny step at a time. "
-                    "Keep it to 2-3 sentences. Make it feel like a game, not a test."
+                    "Keep it to 2-3 sentences. Make it feel like a game, not a test. Do not use emoji — speak naturally with words only."
                 )
             return (
                 f"You are tutoring {child_name} in math ({lesson_title}). "
                 "After feedback, give ONE clear next step. Start concrete (objects, fingers, pictures) before abstract (numbers). "
                 "If they struggle, break it smaller. If they excel, step forward. "
-                "Keep it to 1-2 sentences. Do not greet again."
+                "Keep it to 1-2 sentences. Do not greet again. Do not use emoji."
             )
 
         elif subject == "english":
@@ -151,7 +167,7 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
             return (
                 f"You are tutoring {child_name} in English ({lesson_title}). "
                 "Give brief feedback + ONE clear next step. Build: letter → sound → word → sentence. "
-                "Keep it to 1-2 sentences. Do not greet again."
+                "Keep it to 1-2 sentences. Do not greet again. Do not use emoji."
             )
 
         # Generic fallback
@@ -164,7 +180,7 @@ def _build_lesson_prompt(child_name: str, lesson_context: dict | None, ayah_inde
             )
         return (
             f"You are tutoring {child_name} in {subject_name} ({lesson_title}). "
-            "Give brief feedback + ONE next step. Keep it to 1-2 sentences. Do not greet again."
+            "Give brief feedback + ONE next step. Keep it to 1-2 sentences. Do not greet again. Do not use emoji."
         )
 
     # Quran prompts in Arabic with gender-aware language
@@ -266,7 +282,7 @@ async def realtime_ws(websocket: WebSocket):
     async def send_tutor_message(text: str, ayah_index: int | None = None):
         """Send tutor text + generate TTS audio."""
         import asyncio as _aio
-        is_arabic = active_subject == "quran" or any("\u0600" <= c <= "\u06FF" for c in text)
+        is_arabic = active_subject == "quran"
         try:
             loop = _aio.get_running_loop()
             audio_file = await loop.run_in_executor(None, _generate_tts, text, is_arabic)

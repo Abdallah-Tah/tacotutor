@@ -10,3 +10,4 @@ data/progress.json
 app/node_modules/
 app/dist/
 .codex/
+skills/

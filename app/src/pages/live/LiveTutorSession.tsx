@@ -148,8 +148,9 @@ export default function LiveTutorSession() {
     synth.resume()
 
     const utterance = new SpeechSynthesisUtterance(text)
-    const forceArabicVoice = true
-    const isArabic = forceArabicVoice || /[\u0600-\u06FF]/.test(text)
+    const forceArabicVoice = lesson?.subject === 'quran'
+    const forceEnglishVoice = lesson?.subject === 'english' || lesson?.subject === 'math'
+    const isArabic = forceArabicVoice || (!forceEnglishVoice && /[\u0600-\u06FF]/.test(text))
     const voices = synth.getVoices()
 
     if (forceArabicVoice || isArabic) {
@@ -222,13 +223,53 @@ export default function LiveTutorSession() {
 
   const isQuranSession = true
 
+  const isQuranSession = lesson?.subject === 'quran'
+  const isMathSession = lesson?.subject === 'math'
+
+  const mathMaxCount = (() => {
+    if (!isMathSession) return 0
+    const rangeText = lesson?.content?.range
+    const rangeMatch = typeof rangeText === 'string' ? rangeText.match(/(\d+)\s*-\s*(\d+)/) : null
+    if (rangeMatch) return Number(rangeMatch[2])
+    const explicitMax = lesson?.content?.max || lesson?.content?.count
+    if (typeof explicitMax === 'number') return explicitMax
+    return 5
+  })()
+
+  const mathObjects = Array.isArray(lesson?.content?.objects) && lesson.content.objects.length > 0
+    ? lesson.content.objects
+    : ['block', 'chicken', 'star']
+
+  const objectEmojiMap: Record<string, string> = {
+    block: '🧱',
+    chicken: '🐔',
+    star: '⭐',
+    apple: '🍎',
+    ball: '⚽',
+    cube: '🧊',
+    car: '🚗',
+    duck: '🦆',
+    cat: '🐱',
+  }
+
+  const countingItems = Array.from({ length: Math.max(mathMaxCount, 0) }, (_, index) => {
+    const objectName = String(mathObjects[index % mathObjects.length] || 'block').toLowerCase()
+    return {
+      id: `${objectName}-${index}`,
+      emoji: objectEmojiMap[objectName] || '🔢',
+      label: objectName,
+    }
+  })
+
   const lessonChunks = Array.isArray(lesson?.content?.ayahs) && lesson?.content?.ayahs.length > 0
     ? lesson.content.ayahs
     : lesson?.content?.letter
     ? [lesson.content.letter]
+    : isMathSession && mathMaxCount > 0
+    ? [Array.from({ length: mathMaxCount }, (_, i) => i + 1).join(' ')]
     : []
 
-  const displayText = lessonChunks[currentAyahIndex] || 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
+  const displayText = lessonChunks[currentAyahIndex] || (isQuranSession ? 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ' : 'Let’s begin!')
   const words = displayText.split(' ').filter(Boolean)
 
   useEffect(() => {
@@ -283,7 +324,7 @@ export default function LiveTutorSession() {
         break
       case 'processing':
         setProcessing(true)
-        setTutorText(msg.message || 'جاري التحليل...')
+        setTutorText(msg.message || (isQuranSession ? 'جاري التحليل...' : 'Analyzing your answer...'))
         break
       case 'recitation_feedback':
         setProcessing(false)
@@ -675,6 +716,27 @@ export default function LiveTutorSession() {
                     </motion.span>
                   ))}
                 </div>
+
+                {isMathSession && countingItems.length > 0 && (
+                  <div className="mt-8">
+                    <p className="text-sm text-muted mb-4">Count the objects one by one:</p>
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 justify-items-center">
+                      {countingItems.map((item, index) => (
+                        <motion.div
+                          key={item.id}
+                          initial={{ opacity: 0, scale: 0.6, y: 12 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ delay: index * 0.08, duration: 0.3 }}
+                          className="w-16 h-16 rounded-2xl bg-dark-input border border-border flex flex-col items-center justify-center"
+                          title={item.label}
+                        >
+                          <span className="text-2xl">{item.emoji}</span>
+                          <span className="text-xs text-muted">{index + 1}</span>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {lessonChunks.length > 1 && (
                   <div className="mt-6">

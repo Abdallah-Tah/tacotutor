@@ -93,6 +93,9 @@ def assign_lesson(
     if existing:
         raise HTTPException(status_code=400, detail="Lesson already assigned to this child")
 
+    assignment = LessonAssignment(child_id=child_uuid, lesson_id=lesson_uuid)
+    db.add(assignment)
+    db.commit()
     db.refresh(assignment)
     return assignment
 
